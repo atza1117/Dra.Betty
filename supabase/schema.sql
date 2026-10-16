@@ -69,7 +69,10 @@ create table if not exists public.plan_items (
   periodicidad   text not null default 'mensual' check (periodicidad in ('mensual','quincenal','anual','cuatrimestral','unico')),
   pagos          int,              -- universidad: en cuántos pagos se divide el cuatrimestre
   desde          date,             -- universidad: cuándo arrancó
-  proximo_cobro  date,             -- suscripciones: para avisarte antes
+  proximo_cobro  date,             -- cobros anuales: la fecha del año en que se cobra
+  dia_cobro      int check (dia_cobro between 1 and 31),  -- día del mes en que se cobra
+  meses          int[],            -- meses en que se cobra (null = todos), ej. {10,11,12}
+  palabras       text,             -- palabras para reconocer el cobro en los gastos, separadas por coma
   bolsa          text not null default 'Necesidades',
   medio          text,
   activo         boolean not null default true,
@@ -87,7 +90,21 @@ create table if not exists public.ajustes (
   plan_apoyo        numeric(14,2) not null default 0,
   plan_antojos      numeric(14,2) not null default 0,
   cuenta_principal  uuid references public.cuentas(id) on delete set null,
+  dia_pago1         int not null default 15 check (dia_pago1 between 1 and 31),
+  dia_pago2         int not null default 30 check (dia_pago2 between 1 and 31),
   updated_at        timestamptz not null default now()
+);
+
+-- ── Checklist de pagos por mes ─────────────────────────────────
+-- Una fila por pago fijo y mes: 'pagado' (con el gasto que lo pagó) o 'no_aplica' ("este mes no").
+create table if not exists public.pagos_mes (
+  user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  plan_item   uuid not null references public.plan_items(id) on delete cascade,
+  mes         text not null check (mes ~ '^[0-9]{4}-[0-9]{2}$'),
+  estado      text not null check (estado in ('pagado','no_aplica')),
+  movimiento  uuid references public.movimientos(id) on delete set null,
+  created_at  timestamptz not null default now(),
+  primary key (plan_item, mes)
 );
 
 -- ── Saldos calculados ──────────────────────────────────────────
@@ -108,11 +125,13 @@ alter table public.cuentas      enable row level security;
 alter table public.movimientos  enable row level security;
 alter table public.plan_items   enable row level security;
 alter table public.ajustes      enable row level security;
+alter table public.pagos_mes    enable row level security;
 
 drop policy if exists "solo lo mío" on public.cuentas;
 drop policy if exists "solo lo mío" on public.movimientos;
 drop policy if exists "solo lo mío" on public.plan_items;
 drop policy if exists "solo lo mío" on public.ajustes;
+drop policy if exists "solo lo mío" on public.pagos_mes;
 
 create policy "solo lo mío" on public.cuentas
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -122,6 +141,11 @@ create policy "solo lo mío" on public.plan_items
 
 create policy "solo lo mío" on public.ajustes
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+create policy "solo lo mío" on public.pagos_mes
+  for all using (user_id = auth.uid())
+  with check (user_id = auth.uid()
+    and exists (select 1 from public.plan_items p where p.id = plan_item and p.user_id = auth.uid()));
 
 -- En movimientos además se revisa que las cuentas usadas sean tuyas.
 create policy "solo lo mío" on public.movimientos
@@ -139,7 +163,7 @@ create policy "solo lo mío" on public.movimientos
 -- "Automatically expose new tables".
 grant usage on schema public to authenticated;
 grant select, insert, update, delete
-  on public.cuentas, public.movimientos, public.plan_items, public.ajustes
+  on public.cuentas, public.movimientos, public.plan_items, public.ajustes, public.pagos_mes
   to authenticated;
 grant select on public.saldos to authenticated;
-revoke all on public.cuentas, public.movimientos, public.plan_items, public.ajustes, public.saldos from anon;
+revoke all on public.cuentas, public.movimientos, public.plan_items, public.ajustes, public.pagos_mes, public.saldos from anon;

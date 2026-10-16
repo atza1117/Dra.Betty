@@ -1,13 +1,15 @@
 // ════════════════════════════════════════════════════════════════
-//  Mi Plata — pantalla y eventos
+//  Dra. Betty — pantalla y eventos
 // ════════════════════════════════════════════════════════════════
 import * as db from './db.js';
 import * as C from './calculos.js';
 import { parsearCorreo } from './lector.js';
+import { perezosoSVG, celebrar } from './perezoso.js';
+import * as G from './graficas.js';
 
 const S = {
   cuentas: [], movimientos: [], plan: [], ajustes: null,
-  tab: 'resumen', mes: C.hoyMes(), filtro: 'todos', busca: '',
+  tab: 'inicio', mes: C.hoyMes(), filtro: 'todos', busca: '',
   listo: false, sesion: null,
 };
 
@@ -91,7 +93,8 @@ function pantallaConexion(error) {
   modoApp(false);
   $('#app').innerHTML = `
     <section class="acceso">
-      <div class="brand big">Mi <i>Plata</i></div>
+      <div class="pz-login">${perezosoSVG('feliz')}</div>
+      <div class="brand big">Dra. <i>Betty</i></div>
       <div class="card">
         <h2>Conectá tu base</h2>
         <ol class="pasos">
@@ -122,7 +125,8 @@ function pantallaLogin(msg) {
   const cx = db.conexion();
   $('#app').innerHTML = `
     <section class="acceso">
-      <div class="brand big">Mi <i>Plata</i></div>
+      <div class="pz-login">${perezosoSVG(msg ? 'feliz' : 'feliz')}</div>
+      <div class="brand big">Dra. <i>Betty</i></div>
       <form class="card" id="f-login" novalidate>
         <div class="fld"><label for="l-email">Correo</label>
           <input class="inp" id="l-email" type="email" autocomplete="email" inputmode="email" required></div>
@@ -170,7 +174,7 @@ function pantallaLogin(msg) {
 // ════════════════════════════════════════════════════════════════
 function render() {
   $('#mlbl').textContent = C.mesLabel(S.mes);
-  $('#mes-sel').style.visibility = S.tab === 'cuentas' || S.tab === 'plan' ? 'hidden' : 'visible';
+  $('#mes-sel').style.visibility = S.tab === 'cuentas' ? 'hidden' : 'visible';
   $$('#tabs button').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === S.tab ? 'true' : 'false'));
   const app = $('#app');
   if (!S.listo) {
@@ -179,12 +183,15 @@ function render() {
       <div class="skel" style="width:85%"></div><div class="skel" style="width:70%"></div></div></div>`;
     return;
   }
-  if (!S.cuentas.length && S.tab !== 'plan') { app.innerHTML = vBienvenida(); conectar(app); return; }
-  app.innerHTML = S.tab === 'resumen' ? vResumen()
+  if (!S.cuentas.length && S.tab !== 'pagos') { app.innerHTML = vBienvenida(); conectar(app); return; }
+  if (S.tab !== 'graficas') G.destruirTodo();
+  app.innerHTML = S.tab === 'inicio' ? vInicio()
     : S.tab === 'movs' ? vMovs()
+    : S.tab === 'graficas' ? vGraficas()
     : S.tab === 'cuentas' ? vCuentas()
-    : vPlan();
+    : vPagos();
   conectar(app);
+  if (S.tab === 'graficas') G.pintar(S, S.mes);
 }
 
 function vBienvenida() {
@@ -195,25 +202,30 @@ function vBienvenida() {
       <button class="btn pri" data-nueva-cuenta="corriente">Agregar mi cuenta principal</button>
     </div>
     <div class="card"><h2>¿Ya tenés datos?</h2>
-      <p class="sub" style="margin:0">Si corriste <code>seed.sql</code> en Supabase, tocá recargar.</p>
+      <p class="sub" style="margin:0">Si ya cargaste tus datos en Supabase, tocá recargar.</p>
       <div class="btnrow" style="margin-top:12px"><button class="btn sm" id="recargar">Recargar</button></div></div>`;
 }
 
 // ── Resumen ────────────────────────────────────────────────────
-function vResumen() {
+function vInicio() {
   const r = C.resumenMes(S, S.mes), p = C.plan(S), ingPlan = C.ingresoPlanMes(S);
   const conIngresos = r.ingresos > 0;
   const queda = conIngresos ? r.queda : ingPlan - r.gastos - r.ahorroNeto;
+  const an = C.animo(S, S.mes);
   let h = `<div class="hero">
-    <div class="lbl">${conIngresos ? 'Te queda de ' + esc(C.mesLabel(S.mes)) : 'Proyectado para ' + esc(C.mesLabel(S.mes))}</div>
-    <div class="big${queda < 0 ? ' neg' : ''}">${crc(queda)}</div>
-    <div class="sub">${conIngresos
-      ? `Entró ${crc(r.ingresos)}, gastaste ${crc(r.gastos)} y ${r.ahorroNeto >= 0 ? 'apartaste ' + crc(r.ahorroNeto) : 'sacaste ' + crc(-r.ahorroNeto) + ' del ahorro'}.`
-      : `Todavía no hay ingresos este mes. Uso tu plan de ${crc(ingPlan)}.`}</div>
+    <div class="hero-txt">
+      <div class="lbl">${conIngresos ? 'Te queda de ' + esc(C.mesLabel(S.mes)) : 'Proyectado para ' + esc(C.mesLabel(S.mes))}</div>
+      <div class="big${queda < 0 ? ' neg' : ''}">${crc(queda)}</div>
+      <div class="sub">${conIngresos
+        ? `Entró ${crc(r.ingresos)}, gastaste ${crc(r.gastos)} y ${r.ahorroNeto >= 0 ? 'apartaste ' + crc(r.ahorroNeto) : 'sacaste ' + crc(-r.ahorroNeto) + ' del ahorro'}.`
+        : `Todavía no hay ingresos este mes. Uso tu plan de ${crc(ingPlan)}.`}</div>
+    </div>
+    <div class="hero-pz pz-${an.cara}">${perezosoSVG(an.cara)}</div>
+    <div class="globo" role="note">${esc(an.texto)}</div>
     <div class="trio">
       <div><div class="k">Gastos</div><div class="v">${crc(r.gastos)}</div></div>
       <div><div class="k">Ahorro neto</div><div class="v ${r.ahorroNeto < 0 ? 'neg' : 'pos'}">${crc(r.ahorroNeto)}</div></div>
-      <div><div class="k">Q1 · Q2</div><div class="v" style="font-size:14px">${crc(r.q1)} · ${crc(r.q2)}</div></div>
+      <div><div class="k">Q1 · Q2</div><div class="v peq">${crc(r.q1)} · ${crc(r.q2)}</div></div>
     </div></div>`;
 
   const av = C.avisos(S, S.mes);
@@ -268,9 +280,14 @@ function vResumen() {
 function textoAviso(a) {
   let em = '•', t = '';
   if (a.bolsa) { em = '▲'; t = `<b>${esc(a.bolsa)}</b> se pasó ${crc(a.exceso)} del plan de ${crc(a.limite)}.`; }
-  else if (a.vencida) { em = '■'; t = `<b>${esc(a.vencida.nombre)}</b> venció hace ${a.dias} días. Renovalo o mové la plata.`; }
+  else if (a.vencida) { em = '■'; t = `<b>${esc(a.vencida.nombre)}</b> ${a.dias === 0 ? 'vence hoy' : 'venció hace ' + a.dias + ' días'}. Renovalo o liquidalo.`;
+    t += ` <span class="btnrow" style="display:inline-flex;margin-left:4px"><button class="btn sm pri" data-renovar="${esc(a.vencida.id)}">Renovar</button><button class="btn sm" data-liquidar="${esc(a.vencida.id)}">Liquidar</button></span>`; }
   else if (a.vence) { em = '◷'; t = `<b>${esc(a.vence.nombre)}</b> vence en ${a.dias} días (${fechaLarga(a.vence.vence)}).`; }
-  else if (a.cobro) { em = '↻'; t = `<b>${esc(a.cobro.nombre)}</b> se cobra ${a.dias === 0 ? 'hoy' : 'en ' + a.dias + ' días'} (${dinero(a.cobro.monto, a.cobro.moneda)}).`; }
+  else if (a.cobro) {
+    em = '↻';
+    const cuando = a.dias < 0 ? `se cobró hace ${-a.dias} día${a.dias === -1 ? '' : 's'} y no está marcado` : a.dias === 0 ? 'se cobra hoy' : `se cobra en ${a.dias} día${a.dias === 1 ? '' : 's'}`;
+    t = `<b>${esc(a.cobro.nombre)}</b> ${cuando} (${crc(a.monto)}). <button class="btn sm" data-pagar="${esc(a.cobro.id)}" style="margin-left:4px">Ya se pagó</button>`;
+  }
   else if (a.sinTipoCambio) { em = '$'; t = 'Falta el <b>tipo de cambio</b> en Plan: sin él no puedo sumar tus dólares.'; }
   else if (a.colchon) { em = '◇'; t = `El colchón aguanta <b>${a.colchon.cubiertos.toFixed(1)} meses</b>. Tu meta es ${a.colchon.meses}.`; }
   return `<div class="aviso ${a.nivel}"><span class="em" aria-hidden="true">${em}</span><div>${t}</div></div>`;
@@ -310,7 +327,7 @@ function filaMov(m) {
   return `<button class="item" data-mov="${esc(m.id)}">
     <div class="t1">${esc(titulo)}</div>
     <div class="t2"><span class="dot" style="background:${col}"></span>${linea} · ${fechaCorta(m.fecha)}</div>
-    <div class="amt ${clase}">${monto}</div></button>`;
+    <div class="amt ${clase}">${monto}</div><span class="lapiz" aria-hidden="true">✎</span></button>`;
 }
 
 // ── Movimientos ────────────────────────────────────────────────
@@ -362,63 +379,213 @@ function vCuentas() {
   const totAh = ahor.reduce((a, c) => a + C.saldoCRC(c, t), 0);
   const inact = S.cuentas.filter((c) => !c.activa);
 
-  let h = `<div class="hero">
-    <div class="lbl">Todo lo tuyo</div>
-    <div class="big${totDisp + totAh < 0 ? ' neg' : ''}">${crc(totDisp + totAh)}</div>
-    ${t ? `<div class="sub">≈ ${usd((totDisp + totAh) / t)} a ₡${miles(t)}</div>` : ''}
-    <div class="trio">
-      <div><div class="k">Para gastar</div><div class="v">${crc(totDisp)}</div></div>
+  let h = `<div class="card" style="background:linear-gradient(150deg, rgba(53,38,110,.86), rgba(17,21,46,.88) 60%);border-color:rgba(255,209,102,.35)">
+    <div class="sub" style="text-transform:uppercase;letter-spacing:.08em;font-weight:800;font-size:12px">Todo lo tuyo</div>
+    <div style="font-family:var(--f-dis);font-size:clamp(34px,10vw,48px);color:${totDisp + totAh < 0 ? 'var(--over)' : 'var(--gold)'};line-height:1.1;margin:4px 0">${crc(totDisp + totAh)}</div>
+    ${t ? `<div class="sub">≈ ${usd((totDisp + totAh) / t)} a ₡${miles(t)} por dólar</div>` : ''}
+    <div class="trio" style="grid-row:auto">
+      <div><div class="k">Para gastar</div><div class="v${totDisp < 0 ? ' neg' : ''}">${crc(totDisp)}</div></div>
       <div><div class="k">Ahorrado</div><div class="v pos">${crc(totAh)}</div></div>
       <div><div class="k">Cuentas</div><div class="v">${activas().length}</div></div>
     </div></div>`;
 
   const bloque = (titulo, lista, total) => `<div class="card">
     <div class="grupo-hd"><b>${titulo}</b><span>${crc(total)}</span></div>
-    ${lista.length ? lista.map(filaCuenta).join('') : '<p class="vacio">Ninguna todavía.</p>'}</div>`;
-  h += bloque('Para gastar', disp, totDisp);
+    ${lista.length ? lista.map(tarjetaCuenta).join('') : '<p class="vacio">Ninguna todavía.</p>'}</div>`;
   h += bloque('Ahorro', ahor, totAh);
+  h += bloque('Para gastar', disp, totDisp);
 
   const pb = C.saldoPorBolsa(S);
   const bolsas = C.BOLSAS_AHORRO.filter((b) => pb[b]);
   if (bolsas.length) {
     h += `<div class="card"><h2>Tu ahorro por meta</h2>${bolsas.map((b) => `<div class="saldo-row"><div class="n">
-      <span class="dot" style="background:${b === 'Colchón' ? 'var(--aho)' : 'var(--accent)'}"></span>${esc(b)}</div>
+      <span class="dot" style="background:${b === 'Colchón' ? 'var(--aho)' : 'var(--gold)'}"></span>${esc(b)}</div>
       <div class="v">${crc(pb[b])}</div></div>`).join('')}</div>`;
   }
   if (inact.length) {
-    h += `<div class="card"><h2>Cerradas</h2>${inact.map(filaCuenta).join('')}</div>`;
+    h += `<details class="card cerradas"><summary>Cerradas y liquidadas (${inact.length})</summary>${inact.map(tarjetaCuenta).join('')}</details>`;
   }
-  h += `<div class="btnrow"><button class="btn" data-nueva-cuenta="ahorro">+ Agregar cuenta</button></div>
-    <p class="nota">Los saldos se calculan solos con tus movimientos. Si no calza con el banco, abrí la cuenta y tocá "Ajustar saldo".</p>`;
+  h += `<div class="btnrow"><button class="btn pri" data-nueva-cuenta="ahorro">+ Agregar cuenta o certificado</button></div>
+    <p class="nota" style="text-shadow:0 1px 6px rgba(0,0,0,.7)">Los saldos se calculan solos con tus movimientos. Si no calzan con el banco, tocá Editar → "¿Cuánto dice el banco?".</p>`;
   return h;
 }
 
-function filaCuenta(c) {
-  const d = c.vence ? C.diasHasta(c.vence) : null;
-  const sub = [tipoCuentaLabel(c.tipo)];
-  if (c.bolsa) sub.push(c.bolsa);
-  if (c.tasa) sub.push((c.tasa * 100).toFixed(2).replace('.', ',') + '%');
-  let chip = '';
-  if (c.activa && d !== null) {
-    chip = d < 0 ? `<span class="chip sm neg">venció hace ${-d}d</span>`
-      : d <= 45 ? `<span class="chip sm" style="color:var(--apo)">vence en ${d}d</span>`
-      : `<span class="chip sm" style="color:var(--dim)">vence ${fechaCorta(c.vence)}</span>`;
-  } else if (c.activa && c.tipo === 'certificado') chip = '<span class="chip sm" style="color:var(--apo)">sin fecha</span>';
-  return `<button class="item" data-cuenta="${esc(c.id)}"${c.activa ? '' : ' style="opacity:.5"'}>
-    <div class="t1">${esc(c.nombre)}</div>
-    <div class="t2">${esc(sub.join(' · '))} ${chip}</div>
-    <div class="amt${c.saldo < 0 ? ' neg' : ''}">${dinero(c.saldo, c.moneda)}${c.moneda === 'USD' && tcambio() ? `<small>${crc(C.saldoCRC(c, tcambio()))}</small>` : ''}</div></button>`;
+function chipEstado(c) {
+  const e = C.estadoCuenta(c);
+  if (e.clave === 'cerrada') {
+    const f = C.fechaCierre(S, c);
+    return `<span class="chip sm">Cerrada${f ? ' el ' + fechaCorta(f) : ''}</span>`;
+  }
+  if (e.clave === 'vencido') return `<span class="chip sm vencido">⚠ ${e.dias === 0 ? 'Vence hoy' : 'Vencido hace ' + (-e.dias) + ' d'}</span>`;
+  if (e.clave === 'pronto') return `<span class="chip sm pronto">Vence en ${e.dias} d · ${fechaCorta(c.vence)}</span>`;
+  if (e.clave === 'vigente') return `<span class="chip sm vigente">Vence ${fechaCorta(c.vence)}</span>`;
+  if (e.clave === 'sinfecha') return '<span class="chip sm sinfecha">Sin fecha de vencimiento</span>';
+  return '';
 }
 
-// ── Plan ───────────────────────────────────────────────────────
-function vPlan() {
-  const a = S.ajustes || {}, t = tcambio();
+function tarjetaCuenta(c) {
+  const e = C.estadoCuenta(c);
+  const sub = [tipoCuentaLabel(c.tipo)];
+  if (c.bolsa) sub.push(c.bolsa);
+  if (c.tasa) sub.push((c.tasa * 100).toFixed(2).replace('.', ',') + '% anual');
+  let acc = '';
+  if (c.activa && c.tipo === 'certificado') {
+    const urge = e.clave === 'vencido';
+    acc = `<button class="btn sm ${urge ? 'pri' : ''}" data-renovar="${esc(c.id)}">⟳ Renovar</button>
+           <button class="btn sm ${urge ? 'vio' : ''}" data-liquidar="${esc(c.id)}">✓ Liquidar</button>`;
+  } else if (c.activa && C.esAhorro(c)) {
+    acc = `<button class="btn sm" data-sacar="${esc(c.id)}">↑ Sacar</button>
+           <button class="btn sm" data-meter="${esc(c.id)}">↓ Meter</button>`;
+  }
+  acc += `<button class="btn sm" data-editar-cuenta="${esc(c.id)}">✎ Editar</button>`;
+  return `<div class="cta" data-estado="${e.clave}"${c.activa ? '' : ' style="opacity:.6"'}>
+    <div class="cta-top">
+      <div class="cta-nom"><b>${esc(c.nombre)}</b><span class="sub">${esc(sub.join(' · '))}</span></div>
+      <div class="cta-saldo${c.saldo < 0 ? ' neg' : ''}">${dinero(c.saldo, c.moneda)}${c.moneda === 'USD' && tcambio() ? `<small>${crc(C.saldoCRC(c, tcambio()))}</small>` : ''}</div>
+    </div>
+    ${chipEstado(c) ? `<div>${chipEstado(c)}</div>` : ''}
+    <div class="cta-acc">${acc}</div>
+  </div>`;
+}
+
+// ── Gráficas ───────────────────────────────────────────────────
+function vGraficas() {
+  const r = C.resumenMes(S, S.mes);
+  const bolsas = C.BOLSAS_GASTO.filter((b) => (r.porBolsa[b] || 0) > 0);
+  const top = C.topCategorias(S, S.mes, 6);
+  const h6 = C.historialMeses(S, 6, S.mes);
+  const maxTop = top.length ? top[0].monto : 1;
+  let h = `<div class="card"><h2>¿En qué se fue la plata? <small>${esc(C.mesLabel(S.mes))}</small></h2>`;
+  if (!bolsas.length) h += '<p class="vacio">No hay gastos este mes.</p>';
+  else {
+    h += `<div class="grafica dona"><canvas id="g-dona" aria-label="Gastos del mes por bolsa"></canvas>
+      <div class="dona-centro"><span>Gastaste</span><b>${crc(r.gastos)}</b></div></div>
+      <div class="leyenda">${bolsas.map((b) => `<div><span class="dot" style="background:${G.COLOR_BOLSA[b]}"></span><span>${b}</span>
+        <b>${crc(r.porBolsa[b])}</b><span class="pc">${Math.round(r.porBolsa[b] / r.gastos * 100)}%</span></div>`).join('')}</div>`;
+  }
+  h += '</div>';
+
+  h += `<div class="card"><h2>Lo que más pesa <small>por categoría</small></h2>${top.length ? top.map((x) => `<div class="hbar">
+      <span>${esc(x.categoria)}</span><span class="b"><i style="width:${Math.max(x.monto / maxTop * 100, 3)}%;background:${G.COLOR_BOLSA[x.bolsa] || G.COLOR_BOLSA.Antojos}"></i></span>
+      <b>${crc(x.monto)}</b></div>`).join('') : '<p class="vacio">Sin gastos todavía.</p>'}</div>`;
+
+  h += `<div class="card"><h2>Últimos 6 meses</h2>
+    <div class="grafica barras"><canvas id="g-barras" aria-label="Lo que entró, gastaste y ahorraste en los últimos 6 meses"></canvas></div>
+    <details class="tabla-ver"><summary>Ver como tabla</summary><div class="tblwrap"><table>
+      <thead><tr><th>Mes</th><th class="r">Entró</th><th class="r">Gastaste</th><th class="r">Ahorraste</th></tr></thead>
+      <tbody>${h6.map((x) => `<tr><td>${esc(C.mesLabel(x.mes))}</td><td class="r">${crc(x.ingresos)}</td><td class="r">${crc(x.gastos)}</td><td class="r${x.ahorro < 0 ? ' neg' : ''}">${crc(x.ahorro)}</td></tr>`).join('')}</tbody>
+    </table></div></details></div>`;
+
+  const a6 = C.ahorroEnElTiempo(S, 6, S.mes);
+  const ultimo = a6[a6.length - 1].total, primero = a6[0].total;
+  h += `<div class="card"><h2>Tu ahorro mes a mes</h2>
+    <div class="sub" style="margin:-6px 0 10px">Hoy: <b style="color:var(--pos)">${crc(ultimo)}</b> · ${ultimo >= primero ? 'subió' : 'bajó'} ${crc(Math.abs(ultimo - primero))} en 6 meses</div>
+    <div class="grafica linea"><canvas id="g-linea" aria-label="Total ahorrado al cierre de cada mes"></canvas></div></div>`;
+  return h;
+}
+
+// ── Pagos ──────────────────────────────────────────────────────
+function vPagos() {
+  const P = C.pagosDelMes(S, S.mes);
+  const t = tcambio();
+  const vis = P.lista.filter((x) => x.estado !== 'fuera');
+  const fuera = P.lista.filter((x) => x.estado === 'fuera');
+  const pct = P.total > 0 ? Math.min(P.pagado / P.total * 100, 100) : 0;
+
+  let h = `<div class="card" style="background:linear-gradient(150deg, rgba(53,38,110,.86), rgba(17,21,46,.88) 60%);border-color:rgba(255,209,102,.35)">
+    <div class="sub" style="text-transform:uppercase;letter-spacing:.08em;font-weight:800;font-size:12px">Pagos fijos de ${esc(C.mesLabel(S.mes))}</div>
+    <div class="prog" style="margin-top:6px"><div class="pl"><b style="color:var(--gold)">${crc(P.total)}</b><span>pagado ${crc(P.pagado)}</span></div>
+      <div class="track" style="height:10px"><i style="width:${pct}%;background:var(--pos)"></i></div>
+      <div class="sub">${P.falta > 0.5 ? `Faltan <b style="color:var(--txt)">${crc(P.falta)}</b> por pagar` : '¡Todo pagado este mes!'}${t ? '' : ' · <span class="neg">falta el tipo de cambio</span>'}</div></div></div>`;
+
+  // cuánto apartar
+  const listaQ = (q) => vis.filter((x) => x.quincena === q && (x.estado === 'pendiente' || x.estado === 'pagado'));
+  const mini = (arr) => arr.length ? arr.map((x) => `<div class="saldo-row"><div class="n"><span class="chip sm">día ${x.dia}</span>${esc(x.it.nombre)}</div><div class="v">${crc(x.monto)}</div></div>`).join('')
+    : '<p class="vacio" style="padding:6px 0">Nada</p>';
+  h += `<div class="card"><h2>¿Cuánto apartar?</h2>
+    <div class="grid2">
+      <div><div class="grupo-hd"><b>Del pago del ${P.p1}</b><span>${crc(P.delP1)}</span></div>${mini(listaQ('p1'))}</div>
+      <div><div class="grupo-hd"><b>Del pago del ${P.p2}</b><span>${crc(P.delP2)}</span></div>${mini(listaQ('p2'))}</div>
+    </div>
+    ${P.porQ.sin > 0 ? `<p class="nota">Los que no tienen día de cobro (${crc(P.porQ.sin)}) los repartí mitad y mitad.</p>` : ''}
+    <div class="info" style="margin:14px 0 0">
+      <div><span>Si preferís apartar parejo</span><b>${crc(P.parejo)} por quincena</b></div>
+      ${P.diaADia ? `<div><span>Y para el día a día (${esc(P.presupuesto.map((x) => x.it.nombre).join(', '))})</span><b>${crc(P.diaADiaQ)} por quincena</b></div>` : ''}
+    </div>
+    <p class="nota">Lo que se cobra entre el ${P.p1} y el ${P.p2 - 1} sale del pago del ${P.p1}; lo del ${P.p2} en adelante y los primeros días del mes, del pago del ${P.p2}. Los días de pago se cambian en ⚙.</p></div>`;
+
+  // checklist
+  h += `<div class="card"><h2>Checklist del mes</h2>${vis.length ? vis.map(filaPago).join('') : '<p class="vacio">No hay pagos este mes.</p>'}
+    ${fuera.length ? `<p class="nota">No se cobran en ${esc(C.mesLabel(S.mes).split(' ')[0].toLowerCase())}: ${esc(fuera.map((x) => x.it.nombre).join(', '))}.</p>` : ''}</div>`;
+
+  // administrar
+  C.TIPOS_PLAN.forEach(([tipo, titulo]) => {
+    const ls = S.plan.filter((i) => i.tipo === tipo);
+    const tot = ls.reduce((s, i) => s + C.mensualCRC(i, t), 0);
+    h += `<div class="card"><div class="grupo-hd"><b>${titulo}</b>${tot ? `<span>${crc(tot)}/mes</span>` : ''}</div>`;
+    h += ls.length ? ls.map((i) => {
+      const sub = [i.bolsa];
+      if (i.dia_cobro) sub.push('se cobra el ' + i.dia_cobro);
+      else if (i.tipo !== 'universidad' && C.enChecklist(i)) sub.push('sin día de cobro');
+      if (Array.isArray(i.meses) && i.meses.length) sub.push(i.meses.map((m) => C.MESES[m - 1].slice(0, 3)).join(', '));
+      if (i.tipo === 'universidad') sub.push(`${i.pagos || 3} pagos`);
+      return `<button class="item" data-plan="${esc(i.id)}"${i.activo ? '' : ' style="opacity:.5"'}>
+        <div class="t1">${esc(i.nombre)}${i.activo ? '' : ' <span class="chip sm">apagado</span>'}</div>
+        <div class="t2">${esc(sub.join(' · '))}</div>
+        <div class="amt">${dinero(i.monto, i.moneda)}${i.moneda === 'USD' || i.tipo === 'universidad' ? `<small>${crc(C.montoCobro(i, t))}${i.tipo === 'universidad' ? ' por pago' : ''}</small>` : ''}</div>
+        <span class="lapiz" aria-hidden="true">✎</span></button>`;
+    }).join('') : '<p class="vacio">Nada todavía.</p>';
+    h += `<div class="btnrow" style="margin-top:8px"><button class="btn sm" data-nuevo-plan="${tipo}">+ Agregar</button></div></div>`;
+  });
+  return h;
+}
+
+function filaPago(x) {
+  const it = x.it;
+  let chip, acc = '';
+  if (x.estado === 'pagado') {
+    chip = `<span class="chip sm" style="color:var(--pos);border:1px solid rgba(61,220,151,.4);background:rgba(61,220,151,.12)">✓ Pagado${x.mov ? ' ' + fechaCorta(x.mov.fecha) : ''}</span>`;
+    if (x.detectado) chip += `<span class="sub" style="font-size:11.5px">lo reconocí: ${esc((x.mov.descripcion || x.mov.categoria || '').slice(0, 38))}</span>`;
+    else acc = `<button class="btn sm" data-desmarcar="${esc(it.id)}">Deshacer</button>`;
+  } else if (x.estado === 'no') {
+    chip = '<span class="chip sm">Este mes no</span>';
+    acc = `<button class="btn sm" data-desmarcar="${esc(it.id)}">Sí toca</button>`;
+  } else {
+    const d = x.dias;
+    chip = d === null ? '<span class="chip sm pronto">Pendiente</span>'
+      : d < 0 ? `<span class="chip sm vencido">Se cobró hace ${-d} d · ¿ya pagaste?</span>`
+      : d === 0 ? '<span class="chip sm vencido">Se cobra hoy</span>'
+      : `<span class="chip sm pronto">Se cobra en ${d} d</span>`;
+    acc = `<button class="btn sm pri" data-pagar="${esc(it.id)}">Ya se pagó</button>
+           <button class="btn sm" data-no-aplica="${esc(it.id)}">Este mes no</button>`;
+  }
+  return `<div class="cta" style="gap:8px">
+    <div class="cta-top">
+      <div class="cta-nom"><b>${x.dia ? `<span class="chip sm" style="margin-right:6px;background:rgba(255,209,102,.16);color:var(--gold)">día ${x.dia}</span>` : ''}${esc(it.nombre)}</b>
+        <span class="sub">${esc(it.bolsa)}${it.moneda === 'USD' ? ' · ' + usd(it.monto) : ''}</span></div>
+      <div class="cta-saldo">${crc(x.monto)}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${chip}</div>
+    ${acc ? `<div class="cta-acc">${acc}</div>` : ''}
+  </div>`;
+}
+
+function campo(lbl, id, val, type = 'text', extra = '') {
+  return `<div class="fld"><label for="${id}">${esc(lbl)}</label>
+    <input class="inp" id="${id}" type="${type}" ${type === 'number' ? 'inputmode="decimal" step="any"' : ''} value="${esc(val == null ? '' : val)}" ${extra}></div>`;
+}
+
+// ── Ajustes (⚙ del encabezado) ─────────────────────────────────
+function abrirAjustes() {
+  const a = S.ajustes || {};
   const opcCuentas = activas().filter((c) => !C.esAhorro(c))
     .map((c) => `<option value="${esc(c.id)}"${principal() && principal().id === c.id ? ' selected' : ''}>${esc(c.nombre)}</option>`).join('');
-  let h = `<div class="card"><h2>Lo básico</h2>
-    <div class="row2">
+  const h = `<div class="row2">
       ${campo('Ingreso por quincena', 'a-ingreso_quincena', a.ingreso_quincena, 'number')}
       ${campo('Tipo de cambio (₡ por $1)', 'a-tipo_cambio', a.tipo_cambio, 'number')}
+    </div><div class="row2">
+      ${campo('Primer día de pago', 'a-dia_pago1', a.dia_pago1 ?? 15, 'number', 'min="1" max="31"')}
+      ${campo('Segundo día de pago', 'a-dia_pago2', a.dia_pago2 ?? 30, 'number', 'min="1" max="31"')}
     </div><div class="row2">
       ${campo('Meses de colchón (meta)', 'a-meses_colchon', a.meses_colchon ?? 3, 'number')}
       ${campo('Ahorro planeado al mes', 'a-plan_ahorro', a.plan_ahorro, 'number')}
@@ -428,37 +595,19 @@ function vPlan() {
     </div>
     ${opcCuentas ? `<div class="fld"><label for="a-cuenta_principal">Cuenta principal (donde te pagan)</label>
       <select class="inp" id="a-cuenta_principal">${opcCuentas}</select></div>` : ''}
-    <button class="btn pri" id="guardar-ajustes">Guardar</button>
-    <p class="nota">Necesidades y Suscripciones salen solas de la lista de abajo. Apoyo familiar, Antojos y Ahorro los ponés vos.</p></div>`;
-
-  C.TIPOS_PLAN.forEach(([tipo, titulo]) => {
-    const ls = S.plan.filter((i) => i.tipo === tipo);
-    const tot = ls.reduce((s, i) => s + C.mensualCRC(i, t), 0);
-    h += `<div class="card"><div class="grupo-hd"><b>${titulo}</b>${tot ? `<span>${crc(tot)}/mes</span>` : ''}</div>`;
-    h += ls.length ? ls.map((i) => {
-      const sub = [i.bolsa, i.tipo === 'universidad' ? `${i.pagos || 3} pagos` : i.periodicidad];
-      if (i.proximo_cobro) sub.push('cobro ' + fechaCorta(i.proximo_cobro));
-      return `<button class="item" data-plan="${esc(i.id)}"${i.activo ? '' : ' style="opacity:.5"'}>
-        <div class="t1">${esc(i.nombre)}${i.activo ? '' : ' <span class="chip sm">apagado</span>'}</div>
-        <div class="t2">${esc(sub.join(' · '))}</div>
-        <div class="amt">${dinero(i.monto, i.moneda)}${i.moneda === 'USD' || i.tipo === 'universidad' ? `<small>${crc(C.mensualCRC(i, t))}/mes</small>` : ''}</div></button>`;
-    }).join('') : '<p class="vacio">Nada todavía.</p>';
-    h += `<div class="btnrow" style="margin-top:8px"><button class="btn sm" data-nuevo-plan="${tipo}">+ Agregar</button></div></div>`;
+    <button class="btn pri wide" id="guardar-ajustes">Guardar</button>
+    <p class="nota">Necesidades y Suscripciones salen solas de tus pagos fijos. Apoyo familiar, Antojos y Ahorro los ponés vos.</p>
+    <div class="info" style="margin-top:16px">
+      <div><span>Tus datos están en tu base de Supabase.</span></div>
+      <div class="btnrow" style="justify-content:flex-start"><button class="btn sm" id="exportar">Descargar movimientos (CSV)</button>
+      <button class="btn sm" id="salir">Cerrar sesión</button></div>
+      <div class="sub">${S.sesion && S.sesion.user ? 'Sesión: ' + esc(S.sesion.user.email) : ''}</div>
+    </div>`;
+  abrirHoja('Ajustes', h, () => {
+    $('#guardar-ajustes').addEventListener('click', () => { guardarAjustes(); cerrar(); });
+    $('#exportar').addEventListener('click', exportarCSV);
+    $('#salir').addEventListener('click', async () => { cerrar(); await db.salir(); pantallaLogin('Sesión cerrada.'); });
   });
-
-  h += `<div class="card"><h2>Tus datos</h2>
-    <p class="sub" style="margin:0 0 12px">Todo está en tu base de Supabase. Podés bajarlo cuando quieras.</p>
-    <div class="btnrow">
-      <button class="btn sm" id="exportar">Descargar movimientos (CSV)</button>
-      <button class="btn sm" id="salir">Cerrar sesión</button>
-    </div>
-    <p class="nota">${S.sesion && S.sesion.user ? 'Sesión: ' + esc(S.sesion.user.email) : ''}</p></div>`;
-  return h;
-}
-
-function campo(lbl, id, val, type = 'text', extra = '') {
-  return `<div class="fld"><label for="${id}">${esc(lbl)}</label>
-    <input class="inp" id="${id}" type="${type}" ${type === 'number' ? 'inputmode="decimal" step="any"' : ''} value="${esc(val == null ? '' : val)}" ${extra}></div>`;
 }
 
 // ── Eventos de la vista ────────────────────────────────────────
@@ -470,23 +619,23 @@ function conectar(root) {
     render();
     const n = $('#q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); }
   });
-  $$('[data-filtro]', root).forEach((b) => b.addEventListener('click', () => { S.filtro = b.dataset.filtro; render(); }));
-  $$('[data-ir]', root).forEach((b) => b.addEventListener('click', () => irA(b.dataset.ir)));
-  $$('[data-mov]', root).forEach((b) => b.addEventListener('click', () => {
-    const m = S.movimientos.find((x) => x.id === b.dataset.mov); if (m) abrirMov(m);
+  const on = (attr, fn) => $$(`[data-${attr}]`, root).forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation(); fn(b.getAttribute(`data-${attr}`));
   }));
-  $$('[data-cuenta]', root).forEach((b) => b.addEventListener('click', () => abrirCuenta(cuenta(b.dataset.cuenta))));
-  $$('[data-nueva-cuenta]', root).forEach((b) => b.addEventListener('click', () => abrirCuenta({ tipo: b.dataset.nuevaCuenta })));
-  $$('[data-plan]', root).forEach((b) => b.addEventListener('click', () => {
-    const p = S.plan.find((x) => x.id === b.dataset.plan); if (p) abrirPlan(p);
-  }));
-  $$('[data-nuevo-plan]', root).forEach((b) => b.addEventListener('click', () => abrirPlan({ tipo: b.dataset.nuevoPlan })));
-  const ga = $('#guardar-ajustes', root);
-  if (ga) ga.addEventListener('click', guardarAjustes);
-  const ex = $('#exportar', root);
-  if (ex) ex.addEventListener('click', exportarCSV);
-  const sa = $('#salir', root);
-  if (sa) sa.addEventListener('click', async () => { await db.salir(); pantallaLogin('Sesión cerrada.'); });
+  on('filtro', (v) => { S.filtro = v; render(); });
+  on('ir', (v) => irA(v));
+  on('mov', (id) => { const m = S.movimientos.find((x) => x.id === id); if (m) abrirMov(m); });
+  on('editar-cuenta', (id) => abrirCuenta(cuenta(id)));
+  on('nueva-cuenta', (tipo) => abrirCuenta({ tipo }));
+  on('sacar', (id) => abrirNuevo('sacar', { cuenta_origen: id }));
+  on('meter', (id) => abrirNuevo('ahorrar', { cuenta_destino: id }));
+  on('renovar', (id) => abrirRenovar(cuenta(id)));
+  on('liquidar', (id) => abrirLiquidar(cuenta(id)));
+  on('plan', (id) => { const p = S.plan.find((x) => x.id === id); if (p) abrirPlan(p); });
+  on('nuevo-plan', (tipo) => abrirPlan({ tipo }));
+  on('pagar', (id) => abrirPagar(S.plan.find((x) => x.id === id)));
+  on('no-aplica', (id) => hacer(() => db.marcarPago(id, S.mes, 'no_aplica'), 'Listo, este mes no cuenta'));
+  on('desmarcar', (id) => hacer(() => db.desmarcarPago(id, S.mes), 'Desmarcado'));
   const re = $('#recargar', root);
   if (re) re.addEventListener('click', () => { S.listo = false; render(); recargar(); });
 }
@@ -497,6 +646,9 @@ function guardarAjustes() {
   const o = {};
   ['ingreso_quincena', 'tipo_cambio', 'meses_colchon', 'plan_ahorro', 'plan_apoyo', 'plan_antojos'].forEach((k) => {
     const el = $('#a-' + k); if (el) o[k] = num(el.value);
+  });
+  ['dia_pago1', 'dia_pago2'].forEach((k) => {
+    const el = $('#a-' + k); if (el) o[k] = Math.min(31, Math.max(1, Math.round(num(el.value)) || (k === 'dia_pago1' ? 15 : 30)));
   });
   const cp = $('#a-cuenta_principal'); if (cp) o.cuenta_principal = cp.value || null;
   hacer(() => db.guardarAjustes(o), 'Guardado');
@@ -534,15 +686,17 @@ function botonBorrar(id, etiqueta, fn) {
 
 // ── Anotar ─────────────────────────────────────────────────────
 //  modos: gasto · ingreso · ahorrar · sacar · mover (editar transferencia)
-function abrirNuevo(modo = 'gasto') {
+function abrirNuevo(modo = 'gasto', preset = {}) {
   if (!S.cuentas.length) { abrirCuenta({ tipo: 'corriente' }); return; }
+  const inicial = modo;
   abrirHoja('Anotar', `<div class="seg" id="seg" style="margin-bottom:16px" role="group" aria-label="Tipo de movimiento">
       <button data-m="gasto">Gasto</button><button data-m="ingreso">Ingreso</button>
       <button data-m="ahorrar">Ahorrar</button><button data-m="sacar">Sacar</button></div>
     <div id="form-slot"></div>`, () => {
     const pinta = (m) => {
       $$('#seg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.m === m ? 'true' : 'false'));
-      $('#form-slot').innerHTML = formMov({ modo: m, fecha: C.hoyISO() });
+      const extra = m === inicial ? preset : {};
+      $('#form-slot').innerHTML = formMov({ modo: m, fecha: C.hoyISO(), ...extra });
       conectarForm({ modo: m });
     };
     $$('#seg button').forEach((b) => b.addEventListener('click', () => pinta(b.dataset.m)));
@@ -752,7 +906,8 @@ function guardarMov(m) {
   cerrar();
   const msg = { gasto: 'Gasto anotado', ingreso: 'Ingreso anotado', ahorrar: 'Ahorro anotado',
                 sacar: 'Retiro anotado. No cuenta como gasto', mover: 'Movida anotada' }[modo];
-  hacer(() => db.guardarMovimiento(fila), m.id ? 'Guardado' : msg);
+  hacer(() => db.guardarMovimiento(fila), m.id || modo === 'ahorrar' ? (m.id ? 'Guardado' : '') : msg)
+    .then((ok) => { if (ok && !m.id && modo === 'ahorrar') celebrar('¡Eso! Apartaste ' + dinero(monto, (cuenta(fila.cuenta_origen) || {}).moneda)); });
 }
 
 // ── Cuentas ────────────────────────────────────────────────────
@@ -772,7 +927,7 @@ function abrirCuenta(c) {
     h += `<div class="fld"><label for="k-saldo">¿Cuánto tiene hoy?</label>
       <input class="inp money" id="k-saldo" type="number" inputmode="decimal" step="any" value="" placeholder="0"></div>`;
   } else {
-    h += `<div class="card" style="background:var(--surface2);margin-bottom:14px;padding:13px">
+    h += `<div class="info" style="display:block">
       <div class="grupo-hd" style="margin:0 0 8px"><b>Saldo según la app</b><span>${dinero(c.saldo, c.moneda)}</span></div>
       <div class="fld" style="margin-bottom:8px"><label for="k-real">¿Cuánto dice el banco?</label>
         <input class="inp" id="k-real" type="number" inputmode="decimal" step="any" placeholder="Dejalo vacío si calza"></div>
@@ -786,12 +941,23 @@ function abrirCuenta(c) {
         <div class="fld"><label for="k-vence">Vence (certificados)</label><input class="inp" id="k-vence" type="date" value="${esc(c.vence || '')}"></div>
       </div></div>
     <div class="fld"><label for="k-notas">Notas</label><input class="inp" id="k-notas" value="${esc(c.notas || '')}"></div>
-    <label class="check"><input type="checkbox" id="k-activa"${c.activa === false ? '' : ' checked'}><span>Activa<br><span class="sub">Desactivala cuando la cierres o el certificado se liquide.</span></span></label>
+    <label class="check"><input type="checkbox" id="k-activa"${c.activa === false ? '' : ' checked'}><span>Activa<br><span class="sub">Para certificados, mejor usá Liquidar: mueve la plata y la cierra.</span></span></label>
     <button class="btn pri wide" id="k-save">Guardar</button>
     ${nueva ? '' : '<div class="btnrow" style="margin-top:10px"><button class="btn danger sm" id="k-del"></button></div>'}
     <div id="k-err"></div>`;
 
+  if (!nueva && c.activa && c.tipo === 'certificado') {
+    h = `<div class="btnrow" style="margin-bottom:14px">${chipEstado(c)}</div>
+      <div class="btnrow" style="margin-bottom:16px"><button class="btn sm pri" id="k-renovar">⟳ Renovar</button><button class="btn sm vio" id="k-liquidar">✓ Liquidar</button></div>` + h;
+  } else if (!nueva && c.activa && C.esAhorro(c)) {
+    h = `<div class="btnrow" style="margin-bottom:16px"><button class="btn sm" id="k-sacar">↑ Sacar sin que sea gasto</button><button class="btn sm" id="k-meter">↓ Meter</button></div>` + h;
+  }
   abrirHoja(nueva ? 'Nueva cuenta' : c.nombre, h, () => {
+    const bR = $('#k-renovar'), bL = $('#k-liquidar'), bS = $('#k-sacar'), bM = $('#k-meter');
+    if (bR) bR.addEventListener('click', () => abrirRenovar(c));
+    if (bL) bL.addEventListener('click', () => abrirLiquidar(c));
+    if (bS) bS.addEventListener('click', () => abrirNuevo('sacar', { cuenta_origen: c.id }));
+    if (bM) bM.addEventListener('click', () => abrirNuevo('ahorrar', { cuenta_destino: c.id }));
     const tipo = $('#k-tipo');
     tipo.addEventListener('change', () => { $('#k-ahorro').hidden = !C.esAhorro({ tipo: tipo.value }); });
     $('#k-save').addEventListener('click', () => {
@@ -824,11 +990,161 @@ function abrirCuenta(c) {
   });
 }
 
-// ── Plan ───────────────────────────────────────────────────────
+// ── Certificados: renovar y liquidar ───────────────────────────
+function infoCuenta(c) {
+  return `<div class="info">
+    <div><span>Saldo según la app</span><b>${dinero(c.saldo, c.moneda)}</b></div>
+    ${c.vence ? `<div><span>Vencimiento</span><b>${fechaLarga(c.vence)}</b></div>` : ''}
+    ${c.tasa ? `<div><span>Tasa</span><b>${(c.tasa * 100).toFixed(2).replace('.', ',')}% anual</b></div>` : ''}
+  </div>`;
+}
+
+function convertir(monto, de, a) {
+  const t = tcambio();
+  if (de === a || !t) return monto;
+  return de === 'USD' ? monto * t : monto / t;
+}
+
+function abrirRenovar(c) {
+  if (!c) return;
+  const h = `${infoCuenta(c)}
+    <div class="fld"><label for="r-monto">¿Cuánto tiene ahora, con los intereses? (${c.moneda === 'USD' ? 'dólares' : 'colones'})</label>
+      <input class="inp money" id="r-monto" type="number" inputmode="decimal" step="any" value="${(Math.round(c.saldo * 100) / 100)}"></div>
+    <div class="row2">
+      <div class="fld"><label for="r-vence">Nueva fecha de vencimiento</label><input class="inp" id="r-vence" type="date"></div>
+      <div class="fld"><label for="r-tasa">Nueva tasa anual %</label><input class="inp" id="r-tasa" type="number" inputmode="decimal" step="any" value="${c.tasa ? +(c.tasa * 100).toFixed(3) : ''}"></div>
+    </div>
+    <p class="nota" style="margin:-4px 0 14px">Si el monto subió, la diferencia queda como <b>intereses ganados</b> (ingreso). Si bajó porque sacaste una parte, esa parte pasa a tu cuenta principal (no es gasto).</p>
+    <button class="btn pri wide" id="r-ok">Renovar certificado</button><div id="r-err"></div>`;
+  abrirHoja('Renovar ' + c.nombre, h, () => {
+    $('#r-ok').addEventListener('click', () => {
+      const nuevo = num($('#r-monto').value), vence = $('#r-vence').value;
+      if (!vence) { $('#r-err').innerHTML = '<p class="err">Poné la nueva fecha de vencimiento.</p>'; return; }
+      if (vence <= C.hoyISO()) { $('#r-err').innerHTML = '<p class="err">La nueva fecha tiene que ser después de hoy.</p>'; return; }
+      const diff = Math.round((nuevo - c.saldo) * 100) / 100;
+      const pri = principal();
+      const tasa = $('#r-tasa').value ? num($('#r-tasa').value) / 100 : c.tasa;
+      cerrar();
+      hacer(async () => {
+        if (diff > 0) {
+          await db.guardarMovimiento({ tipo: 'ingreso', monto: diff, fecha: C.hoyISO(), cuenta_destino: c.id,
+            categoria: 'Intereses', descripcion: 'Intereses de ' + c.nombre });
+        } else if (diff < 0 && pri) {
+          const sale = -diff;
+          await db.guardarMovimiento({ tipo: 'transferencia', monto: sale, fecha: C.hoyISO(), cuenta_origen: c.id, cuenta_destino: pri.id,
+            monto_destino: pri.moneda !== c.moneda ? Math.round(convertir(sale, c.moneda, pri.moneda) * 100) / 100 : null,
+            descripcion: 'Parte retirada al renovar ' + c.nombre });
+        }
+        await db.guardarCuenta({ id: c.id, vence, tasa, activa: true });
+      }, 'Certificado renovado hasta el ' + fechaCorta(vence));
+    });
+  });
+}
+
+function abrirLiquidar(c) {
+  if (!c) return;
+  const destinos = activas().filter((x) => x.id !== c.id && x.tipo !== 'certificado');
+  const pri = principal();
+  const sel = (destinos.find((x) => pri && x.id === pri.id) || destinos[0] || {}).id;
+  const h = `${infoCuenta(c)}
+    <div class="fld"><label for="l-monto">¿Cuánto te depositaron en total? (${c.moneda === 'USD' ? 'dólares' : 'colones'})</label>
+      <input class="inp money" id="l-monto" type="number" inputmode="decimal" step="any" value="${(Math.round(c.saldo * 100) / 100)}"></div>
+    <div class="fld"><label for="l-dest">¿A cuál cuenta llegó?</label><select class="inp" id="l-dest">${opcionesCuentas(destinos, sel)}</select></div>
+    <div class="fld" id="l-md-wrap" hidden><label for="l-md" id="l-md-lbl">Monto que llega</label>
+      <input class="inp" id="l-md" type="number" inputmode="decimal" step="any"></div>
+    <div class="fld"><label for="l-fecha">Fecha</label><input class="inp" id="l-fecha" type="date" value="${C.hoyISO()}"></div>
+    <p class="nota" style="margin:-4px 0 14px">La plata pasa a esa cuenta (no es gasto) y el certificado queda como <b>liquidado</b> en el historial, sin contar en tu total. Si te dieron más de lo que dice la app, la diferencia queda como intereses.</p>
+    <button class="btn pri wide" id="l-ok">Liquidar certificado</button><div id="l-err"></div>`;
+  abrirHoja('Liquidar ' + c.nombre, h, () => {
+    const dest = $('#l-dest'), wrap = $('#l-md-wrap'), md = $('#l-md'), mt = $('#l-monto');
+    const revisar = () => {
+      const d = cuenta(dest.value);
+      const distinta = d && d.moneda !== c.moneda;
+      wrap.hidden = !distinta;
+      if (distinta) {
+        $('#l-md-lbl').textContent = `Llegan (en ${d.moneda === 'USD' ? 'dólares' : 'colones'})`;
+        if (!md.dataset.tocado) md.value = (Math.round(convertir(num(mt.value), c.moneda, d.moneda) * 100) / 100).toString();
+      }
+    };
+    dest.addEventListener('change', revisar); mt.addEventListener('input', revisar);
+    md.addEventListener('input', () => { md.dataset.tocado = '1'; });
+    revisar();
+    $('#l-ok').addEventListener('click', () => {
+      const total = num(mt.value), fecha = $('#l-fecha').value || C.hoyISO();
+      const d = cuenta(dest.value);
+      if (!d) { $('#l-err').innerHTML = '<p class="err">Elegí a cuál cuenta llegó la plata.</p>'; return; }
+      if (total <= 0) { $('#l-err').innerHTML = '<p class="err">Poné cuánto te depositaron.</p>'; return; }
+      const diff = Math.round((total - c.saldo) * 100) / 100;
+      cerrar();
+      hacer(async () => {
+        if (diff > 0) {
+          await db.guardarMovimiento({ tipo: 'ingreso', monto: diff, fecha, cuenta_destino: c.id, categoria: 'Intereses', descripcion: 'Intereses de ' + c.nombre });
+        } else if (diff < 0) {
+          await db.guardarMovimiento({ tipo: 'gasto', monto: -diff, fecha, cuenta_origen: c.id, categoria: 'Otros', bolsa: 'Necesidades',
+            descripcion: 'Comisión o penalización de ' + c.nombre });
+        }
+        await db.guardarMovimiento({ tipo: 'transferencia', monto: total, fecha, cuenta_origen: c.id, cuenta_destino: d.id,
+          monto_destino: d.moneda !== c.moneda ? num(md.value) || null : null, descripcion: 'Liquidé ' + c.nombre });
+        await db.guardarCuenta({ id: c.id, activa: false });
+      }, c.nombre + ' liquidado');
+    });
+  });
+}
+
+// ── Marcar un pago fijo como pagado ────────────────────────────
+function abrirPagar(it) {
+  if (!it) return;
+  const P = C.pagosDelMes(S, S.mes);
+  const x = P.lista.find((y) => y.it.id === it.id);
+  const pri = principal();
+  const lista = activas();
+  const sel = (pri || lista[0] || {}).id;
+  const c0 = cuenta(sel);
+  const montoIni = c0 ? convertir(x ? x.monto : 0, 'CRC', c0.moneda) : (x ? x.monto : 0);
+  const [y, m] = S.mes.split('-').map(Number);
+  const ult = new Date(y, m, 0).getDate();
+  const fechaSug = S.mes === C.hoyMes() ? C.hoyISO() : `${S.mes}-${String(Math.min(it.dia_cobro || ult, ult)).padStart(2, '0')}`;
+  const h = `<div class="info">
+      <div><span>${esc(it.nombre)}</span><b>${it.moneda === 'USD' ? usd(it.monto) + ' ≈ ' : ''}${crc(x ? x.monto : 0)}</b></div>
+      ${it.dia_cobro ? `<div><span>Se cobra</span><b>el ${it.dia_cobro} de cada mes</b></div>` : ''}
+    </div>
+    <div class="fld"><label for="pg-monto" id="pg-lbl">Monto${c0 ? ' en ' + (c0.moneda === 'USD' ? 'dólares' : 'colones') : ''}</label>
+      <input class="inp money" id="pg-monto" type="number" inputmode="decimal" step="any" value="${Math.round(montoIni * 100) / 100}"></div>
+    <div class="row2">
+      <div class="fld"><label for="pg-cuenta">¿De dónde salió?</label><select class="inp" id="pg-cuenta">${opcionesCuentas(lista, sel)}</select></div>
+      <div class="fld"><label for="pg-fecha">Fecha</label><input class="inp" id="pg-fecha" type="date" value="${fechaSug}"></div>
+    </div>
+    <button class="btn pri wide" id="pg-ok">Anotar el gasto y marcar pagado</button>
+    <div class="btnrow" style="margin-top:10px"><button class="btn sm" id="pg-solo">Ya lo había anotado: solo marcar</button></div>
+    <div id="pg-err"></div>`;
+  abrirHoja('Ya se pagó', h, () => {
+    $('#pg-cuenta').addEventListener('change', () => {
+      const c = cuenta($('#pg-cuenta').value);
+      if (!c) return;
+      $('#pg-lbl').textContent = 'Monto en ' + (c.moneda === 'USD' ? 'dólares' : 'colones');
+      $('#pg-monto').value = Math.round(convertir(x ? x.monto : 0, 'CRC', c.moneda) * 100) / 100;
+    });
+    $('#pg-ok').addEventListener('click', () => {
+      const monto = num($('#pg-monto').value);
+      if (monto <= 0) { $('#pg-err').innerHTML = '<p class="err">Poné el monto.</p>'; return; }
+      const fila = { tipo: 'gasto', monto, fecha: $('#pg-fecha').value || C.hoyISO(), cuenta_origen: $('#pg-cuenta').value,
+        categoria: C.categoriaDeItem(it), bolsa: it.bolsa || 'Necesidades', medio: it.medio || 'Az', descripcion: it.nombre };
+      cerrar();
+      hacer(async () => {
+        const g = await db.guardarMovimiento(fila);
+        await db.marcarPago(it.id, S.mes, 'pagado', g.id);
+      }, it.nombre + ' pagado ✓');
+    });
+    $('#pg-solo').addEventListener('click', () => { cerrar(); hacer(() => db.marcarPago(it.id, S.mes, 'pagado'), it.nombre + ' marcado como pagado'); });
+  });
+}
+
+// ── Pagos fijos: crear y editar ────────────────────────────────
 function abrirPlan(it) {
   const nuevo = !it.id;
   const titulo = { suscripcion: 'Suscripción', fijo: 'Gasto fijo', universidad: 'Universidad' }[it.tipo];
-  let h = `<div class="fld"><label for="p-nombre">Nombre</label><input class="inp" id="p-nombre" value="${esc(it.nombre || '')}"></div>
+  const meses = Array.isArray(it.meses) ? it.meses : [];
+  let h = `<div class="fld"><label for="p-nombre">Nombre</label><input class="inp" id="p-nombre" value="${esc(it.nombre || '')}" placeholder="${it.tipo === 'suscripcion' ? 'Netflix' : it.tipo === 'fijo' ? 'Luz' : 'Cuatrimestre'}"></div>
     <div class="row2">
       <div class="fld"><label for="p-monto">${it.tipo === 'universidad' ? 'Total del cuatrimestre' : 'Monto'}</label>
         <input class="inp money" id="p-monto" type="number" inputmode="decimal" step="any" value="${esc(it.monto ?? '')}"></div>
@@ -836,40 +1152,55 @@ function abrirPlan(it) {
         ${['CRC', 'USD'].map((x) => `<option${(it.moneda || (it.tipo === 'suscripcion' ? 'USD' : 'CRC')) === x ? ' selected' : ''}>${x}</option>`).join('')}</select></div>
     </div>
     <div class="row2">
-      <div class="fld"><label for="p-bolsa">Bolsa</label><select class="inp" id="p-bolsa">
-        ${['Necesidades', 'Suscripciones'].map((b) => `<option${(it.bolsa || (it.tipo === 'suscripcion' ? 'Suscripciones' : 'Necesidades')) === b ? ' selected' : ''}>${b}</option>`).join('')}</select></div>`;
+      <div class="fld"><label for="p-dia">Día de cobro (1 a 31)</label>
+        <input class="inp" id="p-dia" type="number" inputmode="numeric" min="1" max="31" value="${esc(it.dia_cobro ?? '')}" placeholder="${it.tipo === 'fijo' ? 'Vacío si es del día a día' : 'Ej: 2, 14, 30'}"></div>`;
   if (it.tipo === 'universidad') {
-    h += `<div class="fld"><label for="p-pagos">¿En cuántos pagos?</label><input class="inp" id="p-pagos" type="number" inputmode="numeric" value="${esc(it.pagos ?? 3)}"></div></div>
-      <div class="fld"><label for="p-desde">Arrancó el</label><input class="inp" id="p-desde" type="date" value="${esc(it.desde || '')}"></div>`;
+    h += `<div class="fld"><label for="p-pagos">¿En cuántos pagos?</label><input class="inp" id="p-pagos" type="number" inputmode="numeric" value="${esc(it.pagos ?? 3)}"></div></div>`;
   } else {
     h += `<div class="fld"><label for="p-per">Cada cuánto</label><select class="inp" id="p-per">
-        ${[['mensual', 'Al mes'], ['quincenal', 'Por quincena'], ['anual', 'Al año'], ['cuatrimestral', 'Por cuatrimestre']]
+        ${[['mensual', 'Al mes'], ['quincenal', 'Por quincena'], ['anual', 'Al año']]
           .map(([k, l]) => `<option value="${k}"${(it.periodicidad || 'mensual') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div></div>
-      <div class="row2">
-        <div class="fld"><label for="p-cobro">Próximo cobro</label><input class="inp" id="p-cobro" type="date" value="${esc(it.proximo_cobro || '')}"></div>
-        <div class="fld"><label for="p-medio">Se paga con</label><select class="inp" id="p-medio">
-          ${['Az', 'Black', 'Roja', 'SINPE', 'Efectivo'].map((x) => `<option${(it.medio || 'Az') === x ? ' selected' : ''}>${x}</option>`).join('')}</select></div>
-      </div>`;
+      <div class="fld" id="p-anual-wrap"${it.periodicidad === 'anual' ? '' : ' hidden'}><label for="p-cobro">Fecha del cobro anual</label>
+        <input class="inp" id="p-cobro" type="date" value="${esc(it.proximo_cobro || '')}"></div>`;
   }
-  h += `<div class="fld"><label for="p-notas">Notas</label><input class="inp" id="p-notas" value="${esc(it.notas || '')}"></div>
-    <label class="check"><input type="checkbox" id="p-activo"${it.activo === false ? '' : ' checked'}><span>Activo<br><span class="sub">Apagalo para sacarlo del plan sin borrarlo.</span></span></label>
+  h += `<div class="fld"><label>¿En qué meses se cobra? <span style="font-weight:600">(ninguno marcado = todos)</span></label>
+      <div class="filtros" style="flex-wrap:wrap">${C.MESES.map((nm, i) => `<button type="button" class="btn sm" data-mes-chip="${i + 1}" aria-pressed="${meses.includes(i + 1)}">${nm.slice(0, 3)}</button>`).join('')}</div></div>
+    <div class="row2">
+      <div class="fld"><label for="p-bolsa">Bolsa</label><select class="inp" id="p-bolsa">
+        ${['Necesidades', 'Suscripciones'].map((b) => `<option${(it.bolsa || (it.tipo === 'suscripcion' ? 'Suscripciones' : 'Necesidades')) === b ? ' selected' : ''}>${b}</option>`).join('')}</select></div>
+      <div class="fld"><label for="p-medio">Se paga con</label><select class="inp" id="p-medio">
+        ${['Az', 'Black', 'Roja', 'SINPE', 'Efectivo'].map((x) => `<option${(it.medio || 'Az') === x ? ' selected' : ''}>${x}</option>`).join('')}</select></div>
+    </div>
+    <div class="fld"><label for="p-palabras">Palabras para reconocer el cobro en tus gastos (separadas por coma)</label>
+      <input class="inp" id="p-palabras" value="${esc(it.palabras || '')}" placeholder="${it.tipo === 'suscripcion' ? 'netflix' : 'luz, cnfl'}"></div>
+    <div class="fld"><label for="p-notas">Notas</label><input class="inp" id="p-notas" value="${esc(it.notas || '')}"></div>
+    <label class="check"><input type="checkbox" id="p-activo"${it.activo === false ? '' : ' checked'}><span>Activo<br><span class="sub">Apagalo para sacarlo del plan sin borrarlo (por ejemplo, si cancelás la suscripción).</span></span></label>
     <button class="btn pri wide" id="p-save">Guardar</button>
     ${nuevo ? '' : '<div class="btnrow" style="margin-top:10px"><button class="btn danger sm" id="p-del"></button></div>'}
     <div id="p-err"></div>`;
 
-  abrirHoja((nuevo ? 'Nuevo: ' : '') + titulo, h, () => {
+  abrirHoja((nuevo ? 'Nueva: ' : '') + titulo, h, () => {
+    $$('[data-mes-chip]').forEach((b) => b.addEventListener('click', () => {
+      b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    }));
+    const per = $('#p-per');
+    if (per) per.addEventListener('change', () => { $('#p-anual-wrap').hidden = per.value !== 'anual'; });
     $('#p-save').addEventListener('click', () => {
       const nombre = $('#p-nombre').value.trim();
       if (!nombre) { $('#p-err').innerHTML = '<p class="err">Ponele nombre.</p>'; return; }
+      const dia = $('#p-dia').value ? Math.round(num($('#p-dia').value)) : null;
+      if (dia !== null && (dia < 1 || dia > 31)) { $('#p-err').innerHTML = '<p class="err">El día de cobro va del 1 al 31.</p>'; return; }
+      const mesesSel = $$('[data-mes-chip]').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => +b.dataset.mesChip);
       const fila = {
         id: it.id, tipo: it.tipo, nombre, monto: num($('#p-monto').value), moneda: $('#p-moneda').value,
-        bolsa: $('#p-bolsa').value, notas: $('#p-notas').value.trim() || null, activo: $('#p-activo').checked,
+        bolsa: $('#p-bolsa').value, medio: $('#p-medio').value, notas: $('#p-notas').value.trim() || null,
+        activo: $('#p-activo').checked, dia_cobro: dia, meses: mesesSel.length ? mesesSel : null,
+        palabras: $('#p-palabras').value.trim() || null,
       };
       if (it.tipo === 'universidad') {
-        Object.assign(fila, { periodicidad: 'cuatrimestral', pagos: Math.max(1, Math.round(num($('#p-pagos').value)) || 3),
-          desde: $('#p-desde').value || null });
+        Object.assign(fila, { periodicidad: 'cuatrimestral', pagos: Math.max(1, Math.round(num($('#p-pagos').value)) || 3) });
       } else {
-        Object.assign(fila, { periodicidad: $('#p-per').value, proximo_cobro: $('#p-cobro').value || null, medio: $('#p-medio').value });
+        Object.assign(fila, { periodicidad: per.value, proximo_cobro: per.value === 'anual' ? ($('#p-cobro').value || null) : null });
       }
       cerrar();
       hacer(() => db.guardarPlan(fila), 'Guardado');
@@ -893,7 +1224,7 @@ function exportarCSV() {
   const csv = '﻿' + filas.map((f) => f.map(q).join(',')).join('\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
-  a.href = url; a.download = `mi-plata-${C.hoyISO()}.csv`;
+  a.href = url; a.download = `dra-betty-${C.hoyISO()}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
@@ -920,6 +1251,40 @@ async function arrancar() {
     });
   }
 }
+
+// ── Fondo: las imágenes se van alternando ──────────────────────
+const FONDOS = [
+  { src: 'img/fondo-1.jpg', pos: 'center 70%' },
+  { src: 'img/fondo-2.jpg', pos: 'center' },
+  { src: 'img/fondo-3.jpg', pos: '40% center' },
+  { src: 'img/fondo-4.jpg', pos: '35% center' },
+];
+const LS_FONDO = 'drabetty.fondo';
+let fondoI = 0, fondoCapa = 0, fondoTimer = null;
+try { fondoI = (+localStorage.getItem(LS_FONDO) || 0) % FONDOS.length; } catch (_) {}
+function ponerFondo(i) {
+  fondoI = (i + FONDOS.length) % FONDOS.length;
+  const f = FONDOS[fondoI];
+  const capas = [$('#fondo-a'), $('#fondo-b')];
+  const nueva = capas[fondoCapa ^ 1], vieja = capas[fondoCapa];
+  const img = new Image();
+  img.onload = () => {
+    nueva.style.backgroundImage = `url("${f.src}")`;
+    nueva.style.backgroundPosition = f.pos;
+    nueva.classList.add('ver'); vieja.classList.remove('ver');
+    fondoCapa ^= 1;
+  };
+  img.src = f.src;
+  try { localStorage.setItem(LS_FONDO, String(fondoI)); } catch (_) {}
+}
+function rotarFondos() {
+  clearInterval(fondoTimer);
+  fondoTimer = setInterval(() => { if (document.visibilityState === 'visible') ponerFondo(fondoI + 1); }, 30000);
+}
+ponerFondo(fondoI);
+rotarFondos();
+$('#sig-fondo').addEventListener('click', () => { ponerFondo(fondoI + 1); rotarFondos(); });
+$('#btn-ajustes').addEventListener('click', abrirAjustes);
 
 $('#mprev').addEventListener('click', () => { S.mes = C.mesShift(S.mes, -1); render(); });
 $('#mnext').addEventListener('click', () => { S.mes = C.mesShift(S.mes, 1); render(); });

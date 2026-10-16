@@ -106,11 +106,12 @@ async function todas(tabla, orden, asc = false) {
 }
 
 export async function cargarTodo() {
-  const [cuentas, movimientos, plan, aj] = await Promise.all([
+  const [cuentas, movimientos, plan, aj, pagosMes] = await Promise.all([
     todas('saldos', 'orden', true),
     todas('movimientos', 'fecha'),
     todas('plan_items', 'nombre', true),
     cliente().from('ajustes').select('*').maybeSingle(),
+    todas('pagos_mes', 'mes'),
   ]);
   if (aj.error) throw falla(aj.error, 'Leyendo ajustes');
   const num = (o, ks) => { ks.forEach((k) => { if (o[k] != null) o[k] = Number(o[k]); }); return o; };
@@ -118,9 +119,10 @@ export async function cargarTodo() {
   movimientos.forEach((m) => num(m, ['monto', 'monto_destino']));
   plan.forEach((p) => num(p, ['monto', 'pagos']));
   const ajustes = aj.data
-    ? num({ ...aj.data }, ['tipo_cambio', 'ingreso_quincena', 'meses_colchon', 'plan_ahorro', 'plan_apoyo', 'plan_antojos'])
+    ? num({ ...aj.data }, ['tipo_cambio', 'ingreso_quincena', 'meses_colchon', 'plan_ahorro', 'plan_apoyo', 'plan_antojos', 'dia_pago1', 'dia_pago2'])
     : null;
-  return { cuentas, movimientos, plan, ajustes };
+  plan.forEach((p) => num(p, ['dia_cobro']));
+  return { cuentas, movimientos, plan, ajustes, pagosMes };
 }
 
 // ── Escritura ──────────────────────────────────────────────────
@@ -129,7 +131,7 @@ const CAMPOS = {
                 'categoria', 'bolsa', 'descripcion', 'medio'],
   cuentas:     ['nombre', 'tipo', 'moneda', 'bolsa', 'saldo_inicial', 'tasa', 'vence', 'activa', 'notas', 'orden'],
   plan_items:  ['tipo', 'nombre', 'monto', 'moneda', 'periodicidad', 'pagos', 'desde', 'proximo_cobro',
-                'bolsa', 'medio', 'activo', 'notas'],
+                'bolsa', 'medio', 'activo', 'notas', 'dia_cobro', 'palabras', 'meses'],
 };
 
 function limpiar(tabla, obj) {
@@ -165,7 +167,7 @@ export const borrarPlan        = (id) => borrar('plan_items', id);
 
 export async function guardarAjustes(a) {
   const fila = {};
-  ['tipo_cambio', 'ingreso_quincena', 'meses_colchon', 'plan_ahorro', 'plan_apoyo', 'plan_antojos', 'cuenta_principal']
+  ['tipo_cambio', 'ingreso_quincena', 'meses_colchon', 'plan_ahorro', 'plan_apoyo', 'plan_antojos', 'cuenta_principal', 'dia_pago1', 'dia_pago2']
     .forEach((k) => { if (a[k] !== undefined) fila[k] = a[k] === '' ? null : a[k]; });
   fila.updated_at = new Date().toISOString();
   const { data: u } = await cliente().auth.getUser();
@@ -173,4 +175,16 @@ export async function guardarAjustes(a) {
   const { data, error } = await cliente().from('ajustes').upsert(fila).select().single();
   if (error) throw falla(error, 'Guardando ajustes');
   return data;
+}
+
+// ── Checklist de pagos por mes ─────────────────────────────────
+export async function marcarPago(planItem, mes, estado, movimiento = null) {
+  const { data: u } = await cliente().auth.getUser();
+  const { error } = await cliente().from('pagos_mes')
+    .upsert({ user_id: u.user.id, plan_item: planItem, mes, estado, movimiento }, { onConflict: 'plan_item,mes' });
+  if (error) throw falla(error, 'Marcando el pago');
+}
+export async function desmarcarPago(planItem, mes) {
+  const { error } = await cliente().from('pagos_mes').delete().eq('plan_item', planItem).eq('mes', mes);
+  if (error) throw falla(error, 'Desmarcando el pago');
 }

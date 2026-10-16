@@ -211,13 +211,190 @@ export function avisos(S, mes, hoy = new Date()) {
     if (d < 0) out.push({ nivel: 'mal', vencida: c, dias: -d });
     else if (d <= 45) out.push({ nivel: 'ojo', vence: c, dias: d });
   });
-  S.plan.forEach((it) => {
-    if (!it.activo || it.tipo !== 'suscripcion' || !it.proximo_cobro) return;
-    const d = diasHasta(it.proximo_cobro, hoy);
-    if (d !== null && d >= 0 && d <= 7) out.push({ nivel: 'ojo', cobro: it, dias: d });
-  });
+  if (mes === hoyISO(hoy).slice(0, 7)) {
+    pagosDelMes(S, mes, hoy).lista.forEach((x) => {
+      if (x.estado !== 'pendiente' || x.dias === null) return;
+      if (x.dias < 0) out.push({ nivel: 'mal', cobro: x.it, dias: x.dias, monto: x.monto });
+      else if (x.dias <= 3) out.push({ nivel: 'ojo', cobro: x.it, dias: x.dias, monto: x.monto });
+    });
+  }
   if (!tc(S) && S.cuentas.some((c) => c.moneda === 'USD')) out.push({ nivel: 'ojo', sinTipoCambio: true });
   const c = colchon(S);
   if (c.meta > 0 && c.cubiertos < 1) out.push({ nivel: 'ojo', colchon: c });
   return out;
+}
+
+// ── Estado de una cuenta (sobre todo certificados) ─────────────
+//  clave: activa · vigente · pronto (≤45 días) · vencido · sinfecha · cerrada
+export function estadoCuenta(c, hoy = new Date()) {
+  if (!c.activa) return { clave: 'cerrada' };
+  if (c.tipo !== 'certificado') return { clave: 'activa' };
+  if (!c.vence) return { clave: 'sinfecha' };
+  const d = diasHasta(c.vence, hoy);
+  if (d === null) return { clave: 'sinfecha' };
+  if (d <= 0) return { clave: 'vencido', dias: d };
+  if (d <= 45) return { clave: 'pronto', dias: d };
+  return { clave: 'vigente', dias: d };
+}
+
+/** Fecha en que se cerró una cuenta: la del último movimiento que la tocó. */
+export function fechaCierre(S, c) {
+  let f = null;
+  S.movimientos.forEach((m) => {
+    if (m.cuenta_origen !== c.id && m.cuenta_destino !== c.id) return;
+    if (!f || String(m.fecha) > f) f = String(m.fecha);
+  });
+  return f;
+}
+
+// ── Series para las gráficas ───────────────────────────────────
+export function mesesHasta(n, hasta = hoyMes()) {
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) out.push(mesShift(hasta, -i));
+  return out;
+}
+
+export function historialMeses(S, n = 6, hasta = hoyMes()) {
+  return mesesHasta(n, hasta).map((m) => {
+    const r = resumenMes(S, m);
+    return { mes: m, ingresos: r.ingresos, gastos: r.gastos, ahorro: r.ahorroNeto, n: r.n };
+  });
+}
+
+/** Total en cuentas de ahorro al cierre de cada mes (en ₡, con el tipo de cambio de hoy). */
+export function ahorroEnElTiempo(S, n = 6, hasta = hoyMes()) {
+  const t = tc(S);
+  const ahorros = S.cuentas.filter(esAhorro);
+  return mesesHasta(n, hasta).map((m) => {
+    const corte = mesShift(m, 1) + '-01';
+    let total = 0;
+    ahorros.forEach((c) => {
+      let s = Number(c.saldo) || 0;
+      S.movimientos.forEach((mv) => {
+        if (String(mv.fecha) < corte) return;
+        if (mv.cuenta_destino === c.id) s -= Number(mv.monto_destino != null ? mv.monto_destino : mv.monto);
+        if (mv.cuenta_origen === c.id) s += Number(mv.monto);
+      });
+      total += aCRC(s, c.moneda, t);
+    });
+    return { mes: m, total };
+  });
+}
+
+export function topCategorias(S, mes, n = 6) {
+  const t = tc(S), ix = indexar(S.cuentas), acc = {};
+  S.movimientos.forEach((m) => {
+    if (m.tipo !== 'gasto' || String(m.fecha).slice(0, 7) !== mes) return;
+    const k = m.categoria || 'Otros';
+    acc[k] = (acc[k] || 0) + movCRC(m, ix, t);
+  });
+  return Object.entries(acc).sort((a, b) => b[1] - a[1]).slice(0, n)
+    .map(([categoria, monto]) => ({ categoria, monto, bolsa: CAT_BOLSA[categoria] || 'Antojos' }));
+}
+
+// ── Ánimo del perezoso ─────────────────────────────────────────
+export function animo(S, mes, hoy = new Date()) {
+  const vencidos = S.cuentas.filter((c) => estadoCuenta(c, hoy).clave === 'vencido');
+  if (vencidos.length) return { cara: 'ojo', texto: `${vencidos[0].nombre} ya venció. Tocá Renovar o Liquidar.` };
+  const r = resumenMes(S, mes), p = plan(S);
+  const pasada = BOLSAS_GASTO.map((b) => [b, (r.porBolsa[b] || 0) - (p[b] || 0)])
+    .filter(([b, d]) => (p[b] || 0) > 0 && d > 0).sort((a, b) => b[1] - a[1])[0];
+  if (r.ingresos > 0 && r.queda < 0) return { cara: 'ojo', texto: 'Este mes vamos en rojo. Despacito, que yo tampoco corro.' };
+  if (pasada) return { cara: 'ojo', texto: `${pasada[0]} ya se pasó del plan. Frenemos un toque.` };
+  if (r.ahorroNeto > 0) return { cara: 'feliz', texto: '¡Ahorraste este mes! Pura vida.' };
+  return { cara: 'feliz', texto: 'Todo tranqui por aquí. Seguí así.' };
+}
+
+
+// ── Pagos fijos del mes (suscripciones, recibos, universidad) ──
+export function normalizar(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function claves(it) {
+  const base = it.palabras ? it.palabras.split(',') : [it.nombre];
+  return base.map(normalizar).filter((k) => k.length >= 3);
+}
+/** ¿Se cobra este item en ese mes? */
+export function aplicaEnMes(it, mes) {
+  if (!it.activo) return false;
+  const m = +mes.slice(5, 7);
+  if (it.periodicidad === 'unico') return false;
+  if (it.periodicidad === 'anual') return !!it.proximo_cobro && +String(it.proximo_cobro).slice(5, 7) === m;
+  if (Array.isArray(it.meses) && it.meses.length && !it.meses.includes(m)) return false;
+  return true;
+}
+/** Lo que cuesta en un mes en que sí se cobra, en colones. */
+export function montoCobro(it, tipoCambio) {
+  const m = aCRC(it.monto, it.moneda, tipoCambio);
+  if (it.tipo === 'universidad') return m / (Number(it.pagos) || 3);
+  if (it.periodicidad === 'quincenal') return m * 2;
+  return m;
+}
+export const enChecklist = (it) => !!it.dia_cobro || it.tipo === 'suscripcion' || it.tipo === 'universidad';
+
+/**
+ * El checklist del mes y cuánto apartar en cada pago.
+ * estado: pendiente · pagado · no (marcado "este mes no") · fuera (no se cobra este mes)
+ * quincena: 'p1' (sale del pago del día dia_pago1) · 'p2' (del pago del día dia_pago2) · 'sin' (no tiene día)
+ */
+export function pagosDelMes(S, mes, hoy = new Date()) {
+  const t = tc(S);
+  const a = S.ajustes || {};
+  const p1 = Number(a.dia_pago1) || 15, p2 = Number(a.dia_pago2) || 30;
+  const regs = {};
+  (S.pagosMes || []).forEach((r) => { if (r.mes === mes) regs[r.plan_item] = r; });
+  const usados = new Set(Object.values(regs).map((r) => r.movimiento).filter(Boolean));
+  const gastos = S.movimientos.filter((m) => m.tipo === 'gasto' && String(m.fecha).slice(0, 7) === mes);
+  const esEsteMes = mes === hoyISO(hoy).slice(0, 7);
+
+  const lista = [], presupuesto = [];
+  const items = S.plan.filter((it) => it.activo).slice()
+    .sort((x, y) => (x.dia_cobro || 99) - (y.dia_cobro || 99) || String(x.nombre).localeCompare(y.nombre));
+
+  items.forEach((it) => {
+    const monto = montoCobro(it, t);
+    if (!enChecklist(it)) {
+      if (aplicaEnMes(it, mes)) presupuesto.push({ it, monto });
+      return;
+    }
+    const reg = regs[it.id];
+    const d = Number(it.dia_cobro) || null;
+    const quincena = !d ? 'sin' : (d >= p1 && d < p2 ? 'p1' : 'p2');
+    let estado, mov = null, detectado = false;
+    if (!aplicaEnMes(it, mes)) estado = 'fuera';
+    else if (reg && reg.estado === 'no_aplica') estado = 'no';
+    else if (reg && reg.estado === 'pagado') { estado = 'pagado'; mov = S.movimientos.find((m) => m.id === reg.movimiento) || null; }
+    else {
+      const ks = claves(it);
+      mov = gastos.find((g) => !usados.has(g.id) && ks.some((k) => normalizar(`${g.descripcion || ''} ${g.categoria || ''}`).includes(k)));
+      if (mov) { estado = 'pagado'; detectado = true; usados.add(mov.id); }
+      else estado = 'pendiente';
+    }
+    let dias = null;
+    if (d && esEsteMes) {
+      const ult = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
+      dias = Math.min(d, ult) - hoy.getDate();
+    }
+    lista.push({ it, monto, estado, mov, detectado, dia: d, quincena, dias, reg });
+  });
+
+  const cuenta = lista.filter((x) => x.estado === 'pendiente' || x.estado === 'pagado');
+  const suma = (arr) => arr.reduce((acc, x) => acc + x.monto, 0);
+  const porQ = { p1: suma(cuenta.filter((x) => x.quincena === 'p1')), p2: suma(cuenta.filter((x) => x.quincena === 'p2')),
+                 sin: suma(cuenta.filter((x) => x.quincena === 'sin')) };
+  const total = suma(cuenta), pagado = suma(cuenta.filter((x) => x.estado === 'pagado'));
+  const diaADia = suma(presupuesto);
+  return { lista, presupuesto, total, pagado, falta: total - pagado, porQ, p1, p2,
+           parejo: total / 2, diaADia, diaADiaQ: diaADia / 2,
+           delP1: porQ.p1 + porQ.sin / 2, delP2: porQ.p2 + porQ.sin / 2 };
+}
+
+/** Categoría para el gasto cuando se marca pagado. */
+export function categoriaDeItem(it) {
+  if (it.tipo === 'suscripcion') return 'Suscripción';
+  if (it.tipo === 'universidad') return 'Universidad';
+  const n = normalizar(it.nombre);
+  const c = CATEGORIAS.find((k) => n.includes(normalizar(k)));
+  return c || 'Otros';
 }
