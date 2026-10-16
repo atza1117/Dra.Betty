@@ -131,7 +131,7 @@ const CAMPOS = {
                 'categoria', 'bolsa', 'descripcion', 'medio'],
   cuentas:     ['nombre', 'tipo', 'moneda', 'bolsa', 'saldo_inicial', 'tasa', 'vence', 'activa', 'notas', 'orden'],
   plan_items:  ['tipo', 'nombre', 'monto', 'moneda', 'periodicidad', 'pagos', 'desde', 'proximo_cobro',
-                'bolsa', 'medio', 'activo', 'notas', 'dia_cobro', 'palabras', 'meses'],
+                'bolsa', 'medio', 'activo', 'notas', 'dia_cobro', 'palabras', 'meses', 'dividir', 'cuenta_apartado'],
 };
 
 function limpiar(tabla, obj) {
@@ -178,13 +178,13 @@ export async function guardarAjustes(a) {
 }
 
 // ── Checklist de pagos por mes ─────────────────────────────────
-export async function marcarPago(planItem, mes, estado, movimiento = null) {
+export async function marcarPago(planItem, mes, estado, movimiento = null, parte = 'pago') {
   const { data: u } = await cliente().auth.getUser();
   const { error } = await cliente().from('pagos_mes')
-    .upsert({ user_id: u.user.id, plan_item: planItem, mes, estado, movimiento }, { onConflict: 'plan_item,mes' });
+    .upsert({ user_id: u.user.id, plan_item: planItem, mes, estado, movimiento, parte }, { onConflict: 'plan_item,mes,parte' });
   if (error) throw falla(error, 'Marcando el pago');
 }
-export async function desmarcarPago(planItem, mes) {
-  const { error } = await cliente().from('pagos_mes').delete().eq('plan_item', planItem).eq('mes', mes);
+export async function desmarcarPago(planItem, mes, parte = 'pago') {
+  const { error } = await cliente().from('pagos_mes').delete().eq('plan_item', planItem).eq('mes', mes).eq('parte', parte);
   if (error) throw falla(error, 'Desmarcando el pago');
 }

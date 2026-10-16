@@ -218,6 +218,13 @@ export function avisos(S, mes, hoy = new Date()) {
       else if (x.dias <= 3) out.push({ nivel: 'ojo', cobro: x.it, dias: x.dias, monto: x.monto });
     });
   }
+  if (mes === hoyISO(hoy).slice(0, 7)) {
+    apartadosDelMes(S, mes, hoy).forEach((x) => {
+      if (x.estado !== 'pendiente') return;
+      if (x.dias <= 0) out.push({ nivel: 'mal', apartar: x });
+      else if (x.dias <= 2) out.push({ nivel: 'ojo', apartar: x });
+    });
+  }
   if (!tc(S) && S.cuentas.some((c) => c.moneda === 'USD')) out.push({ nivel: 'ojo', sinTipoCambio: true });
   const c = colchon(S);
   if (c.meta > 0 && c.cubiertos < 1) out.push({ nivel: 'ojo', colchon: c });
@@ -343,7 +350,7 @@ export function pagosDelMes(S, mes, hoy = new Date()) {
   const a = S.ajustes || {};
   const p1 = Number(a.dia_pago1) || 15, p2 = Number(a.dia_pago2) || 30;
   const regs = {};
-  (S.pagosMes || []).forEach((r) => { if (r.mes === mes) regs[r.plan_item] = r; });
+  (S.pagosMes || []).forEach((r) => { if (r.mes === mes && (r.parte || 'pago') === 'pago') regs[r.plan_item] = r; });
   const usados = new Set(Object.values(regs).map((r) => r.movimiento).filter(Boolean));
   const gastos = S.movimientos.filter((m) => m.tipo === 'gasto' && String(m.fecha).slice(0, 7) === mes);
   const esEsteMes = mes === hoyISO(hoy).slice(0, 7);
@@ -381,13 +388,16 @@ export function pagosDelMes(S, mes, hoy = new Date()) {
 
   const cuenta = lista.filter((x) => x.estado === 'pendiente' || x.estado === 'pagado');
   const suma = (arr) => arr.reduce((acc, x) => acc + x.monto, 0);
-  const porQ = { p1: suma(cuenta.filter((x) => x.quincena === 'p1')), p2: suma(cuenta.filter((x) => x.quincena === 'p2')),
-                 sin: suma(cuenta.filter((x) => x.quincena === 'sin')) };
+  const directos = cuenta.filter((x) => !x.it.dividir);
+  const porQ = { p1: suma(directos.filter((x) => x.quincena === 'p1')), p2: suma(directos.filter((x) => x.quincena === 'p2')),
+                 sin: suma(directos.filter((x) => x.quincena === 'sin')) };
+  const apartados = apartadosDelMes(S, mes, hoy);
+  const apP1 = suma(apartados.filter((x) => x.cual === 'p1')), apP2 = suma(apartados.filter((x) => x.cual === 'p2'));
   const total = suma(cuenta), pagado = suma(cuenta.filter((x) => x.estado === 'pagado'));
   const diaADia = suma(presupuesto);
-  return { lista, presupuesto, total, pagado, falta: total - pagado, porQ, p1, p2,
-           parejo: total / 2, diaADia, diaADiaQ: diaADia / 2,
-           delP1: porQ.p1 + porQ.sin / 2, delP2: porQ.p2 + porQ.sin / 2 };
+  const delP1 = porQ.p1 + porQ.sin / 2 + apP1, delP2 = porQ.p2 + porQ.sin / 2 + apP2;
+  return { lista, presupuesto, total, pagado, falta: total - pagado, porQ, p1, p2, apartados, apP1, apP2,
+           parejo: (delP1 + delP2) / 2, diaADia, diaADiaQ: diaADia / 2, delP1, delP2 };
 }
 
 /** Categoría para el gasto cuando se marca pagado. */
@@ -397,4 +407,48 @@ export function categoriaDeItem(it) {
   const n = normalizar(it.nombre);
   const c = CATEGORIAS.find((k) => n.includes(normalizar(k)));
   return c || 'Otros';
+}
+
+
+// ── Apartar por quincena ───────────────────────────────────────
+//  Para los pagos grandes marcados "dividir" (la U, por ejemplo): la mitad se aparta en
+//  cada uno de los dos días de pago que vienen ANTES del cobro.
+//  Cobro el 1 de noviembre → se aparta el 15 y el 30 de octubre.
+function isoDe(y, m, d) {
+  const ult = new Date(y, m, 0).getDate();
+  return `${y}-${p2(m)}-${p2(Math.min(d, ult))}`;
+}
+export function diasDePago(mes, S) {
+  const a = (S && S.ajustes) || {};
+  const [y, m] = mes.split('-').map(Number);
+  return [isoDe(y, m, Number(a.dia_pago1) || 15), isoDe(y, m, Number(a.dia_pago2) || 30)];
+}
+export function apartadosDelMes(S, mes, hoy = new Date()) {
+  const t = tc(S);
+  const marcas = {};
+  (S.pagosMes || []).forEach((r) => { if (r.mes === mes && r.parte && r.parte !== 'pago') marcas[r.plan_item + '|' + r.parte] = r; });
+  const pagos = [];
+  for (let i = -1; i <= 2; i++) diasDePago(mesShift(mes, i), S).forEach((d) => pagos.push(d));
+  pagos.sort();
+  const [mp1] = diasDePago(mes, S);
+  const hoyIso = hoyISO(hoy);
+  const out = [];
+  S.plan.filter((it) => it.activo && it.dividir).forEach((it) => {
+    const mitad = montoCobro(it, t) / 2;
+    for (let i = 0; i <= 3; i++) {
+      const mc = mesShift(mes, i);
+      if (!aplicaEnMes(it, mc)) continue;
+      const [y, m] = mc.split('-').map(Number);
+      const cobro = it.dia_cobro ? isoDe(y, m, it.dia_cobro) : isoDe(y, m, 31);
+      const antes = pagos.filter((d) => d < cobro).slice(-2);
+      antes.forEach((dp) => {
+        if (dp.slice(0, 7) !== mes) return;
+        const marca = marcas[it.id + '|' + dp];
+        const dias = Math.round((new Date(dp + 'T12:00:00') - new Date(hoyIso + 'T12:00:00')) / 86400000);
+        out.push({ it, dia: dp, cual: dp === mp1 ? 'p1' : 'p2', para: cobro, monto: mitad,
+                   estado: marca ? 'apartado' : 'pendiente', marca, dias });
+      });
+    }
+  });
+  return out.sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0));
 }

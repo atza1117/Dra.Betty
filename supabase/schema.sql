@@ -73,6 +73,8 @@ create table if not exists public.plan_items (
   dia_cobro      int check (dia_cobro between 1 and 31),  -- día del mes en que se cobra
   meses          int[],            -- meses en que se cobra (null = todos), ej. {10,11,12}
   palabras       text,             -- palabras para reconocer el cobro en los gastos, separadas por coma
+  dividir        boolean not null default false,  -- apartar la mitad en cada uno de los dos pagos antes del cobro
+  cuenta_apartado uuid references public.cuentas(id) on delete set null,  -- adónde se aparta (opcional)
   bolsa          text not null default 'Necesidades',
   medio          text,
   activo         boolean not null default true,
@@ -96,15 +98,18 @@ create table if not exists public.ajustes (
 );
 
 -- ── Checklist de pagos por mes ─────────────────────────────────
--- Una fila por pago fijo y mes: 'pagado' (con el gasto que lo pagó) o 'no_aplica' ("este mes no").
+-- Una fila por pago fijo, mes y parte:
+--   parte 'pago'        → 'pagado' (con el gasto que lo pagó) o 'no_aplica' ("este mes no")
+--   parte 'AAAA-MM-DD'  → 'apartado': la mitad que se apartó en ese día de pago
 create table if not exists public.pagos_mes (
   user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
   plan_item   uuid not null references public.plan_items(id) on delete cascade,
   mes         text not null check (mes ~ '^[0-9]{4}-[0-9]{2}$'),
-  estado      text not null check (estado in ('pagado','no_aplica')),
+  parte       text not null default 'pago',
+  estado      text not null check (estado in ('pagado','no_aplica','apartado')),
   movimiento  uuid references public.movimientos(id) on delete set null,
   created_at  timestamptz not null default now(),
-  primary key (plan_item, mes)
+  primary key (plan_item, mes, parte)
 );
 
 -- ── Saldos calculados ──────────────────────────────────────────

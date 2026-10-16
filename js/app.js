@@ -288,6 +288,12 @@ function textoAviso(a) {
     const cuando = a.dias < 0 ? `se cobró hace ${-a.dias} día${a.dias === -1 ? '' : 's'} y no está marcado` : a.dias === 0 ? 'se cobra hoy' : `se cobra en ${a.dias} día${a.dias === 1 ? '' : 's'}`;
     t = `<b>${esc(a.cobro.nombre)}</b> ${cuando} (${crc(a.monto)}). <button class="btn sm" data-pagar="${esc(a.cobro.id)}" style="margin-left:4px">Ya se pagó</button>`;
   }
+  else if (a.apartar) {
+    const x = a.apartar;
+    em = '⬇';
+    const cuando = x.dias < 0 ? `El ${+x.dia.slice(8)} te tocaba apartar` : x.dias === 0 ? 'Hoy es día de pago: apartá' : `El ${+x.dia.slice(8)} te toca apartar`;
+    t = `${cuando} <b>${crc(x.monto)}</b> para <b>${esc(x.it.nombre)}</b> (se cobra el ${fechaCorta(x.para)}). <button class="btn sm pri" data-apartar="${esc(x.it.id)}|${esc(x.dia)}" style="margin-left:4px">Ya lo aparté</button>`;
+  }
   else if (a.sinTipoCambio) { em = '$'; t = 'Falta el <b>tipo de cambio</b> en Plan: sin él no puedo sumar tus dólares.'; }
   else if (a.colchon) { em = '◇'; t = `El colchón aguanta <b>${a.colchon.cubiertos.toFixed(1)} meses</b>. Tu meta es ${a.colchon.meses}.`; }
   return `<div class="aviso ${a.nivel}"><span class="em" aria-hidden="true">${em}</span><div>${t}</div></div>`;
@@ -499,8 +505,10 @@ function vPagos() {
       <div class="sub">${P.falta > 0.5 ? `Faltan <b style="color:var(--txt)">${crc(P.falta)}</b> por pagar` : '¡Todo pagado este mes!'}${t ? '' : ' · <span class="neg">falta el tipo de cambio</span>'}</div></div></div>`;
 
   // cuánto apartar
-  const listaQ = (q) => vis.filter((x) => x.quincena === q && (x.estado === 'pendiente' || x.estado === 'pagado'));
-  const mini = (arr) => arr.length ? arr.map((x) => `<div class="saldo-row"><div class="n"><span class="chip sm">día ${x.dia}</span>${esc(x.it.nombre)}</div><div class="v">${crc(x.monto)}</div></div>`).join('')
+  const listaQ = (q) => vis.filter((x) => !x.it.dividir && x.quincena === q && (x.estado === 'pendiente' || x.estado === 'pagado'))
+    .map((x) => ({ chip: 'día ' + x.dia, nombre: x.it.nombre, monto: x.monto }))
+    .concat(P.apartados.filter((x) => x.cual === q).map((x) => ({ chip: 'mitad', nombre: `${x.it.nombre} · para el ${fechaCorta(x.para)}`, monto: x.monto })));
+  const mini = (arr) => arr.length ? arr.map((x) => `<div class="saldo-row"><div class="n"><span class="chip sm">${esc(x.chip)}</span>${esc(x.nombre)}</div><div class="v">${crc(x.monto)}</div></div>`).join('')
     : '<p class="vacio" style="padding:6px 0">Nada</p>';
   h += `<div class="card"><h2>¿Cuánto apartar?</h2>
     <div class="grid2">
@@ -513,6 +521,12 @@ function vPagos() {
       ${P.diaADia ? `<div><span>Y para el día a día (${esc(P.presupuesto.map((x) => x.it.nombre).join(', '))})</span><b>${crc(P.diaADiaQ)} por quincena</b></div>` : ''}
     </div>
     <p class="nota">Lo que se cobra entre el ${P.p1} y el ${P.p2 - 1} sale del pago del ${P.p1}; lo del ${P.p2} en adelante y los primeros días del mes, del pago del ${P.p2}. Los días de pago se cambian en ⚙.</p></div>`;
+
+  // apartados por quincena
+  if (P.apartados.length) {
+    h += `<div class="card"><h2>Para apartar este mes <small>la mitad en cada pago</small></h2>${P.apartados.map(filaApartado).join('')}
+      <p class="nota">Así no tenés que sacar todo de un solo pago cuando llega el cobro.</p></div>`;
+  }
 
   // checklist
   h += `<div class="card"><h2>Checklist del mes</h2>${vis.length ? vis.map(filaPago).join('') : '<p class="vacio">No hay pagos este mes.</p>'}
@@ -529,6 +543,7 @@ function vPagos() {
       else if (i.tipo !== 'universidad' && C.enChecklist(i)) sub.push('sin día de cobro');
       if (Array.isArray(i.meses) && i.meses.length) sub.push(i.meses.map((m) => C.MESES[m - 1].slice(0, 3)).join(', '));
       if (i.tipo === 'universidad') sub.push(`${i.pagos || 3} pagos`);
+      if (i.dividir) sub.push('mitad por quincena');
       return `<button class="item" data-plan="${esc(i.id)}"${i.activo ? '' : ' style="opacity:.5"'}>
         <div class="t1">${esc(i.nombre)}${i.activo ? '' : ' <span class="chip sm">apagado</span>'}</div>
         <div class="t2">${esc(sub.join(' · '))}</div>
@@ -567,6 +582,29 @@ function filaPago(x) {
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${chip}</div>
     ${acc ? `<div class="cta-acc">${acc}</div>` : ''}
+  </div>`;
+}
+
+function filaApartado(x) {
+  const c = cuenta(x.it.cuenta_apartado);
+  let chip, acc;
+  if (x.estado === 'apartado') {
+    chip = `<span class="chip sm" style="color:var(--pos);border:1px solid rgba(61,220,151,.4);background:rgba(61,220,151,.12)">✓ Apartado${c && x.marca && x.marca.movimiento ? ' en ' + esc(c.nombre) : ''}</span>`;
+    acc = `<button class="btn sm" data-desapartar="${esc(x.it.id)}|${esc(x.dia)}">Deshacer</button>`;
+  } else {
+    chip = x.dias < 0 ? `<span class="chip sm vencido">Te tocaba el ${fechaCorta(x.dia)}</span>`
+      : x.dias === 0 ? '<span class="chip sm vencido">Hoy</span>'
+      : `<span class="chip sm pronto">El ${fechaCorta(x.dia)} · en ${x.dias} d</span>`;
+    acc = `<button class="btn sm pri" data-apartar="${esc(x.it.id)}|${esc(x.dia)}">Ya lo aparté</button>`;
+  }
+  return `<div class="cta" style="gap:8px">
+    <div class="cta-top">
+      <div class="cta-nom"><b><span class="chip sm" style="margin-right:6px;background:rgba(255,209,102,.16);color:var(--gold)">pago del ${+x.dia.slice(8)}</span>${esc(x.it.nombre)}</b>
+        <span class="sub">Mitad para el cobro del ${fechaLarga(x.para)}${c ? ' · va a ' + esc(c.nombre) : ''}</span></div>
+      <div class="cta-saldo">${crc(x.monto)}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${chip}</div>
+    <div class="cta-acc">${acc}</div>
   </div>`;
 }
 
@@ -636,6 +674,8 @@ function conectar(root) {
   on('pagar', (id) => abrirPagar(S.plan.find((x) => x.id === id)));
   on('no-aplica', (id) => hacer(() => db.marcarPago(id, S.mes, 'no_aplica'), 'Listo, este mes no cuenta'));
   on('desmarcar', (id) => hacer(() => db.desmarcarPago(id, S.mes), 'Desmarcado'));
+  on('apartar', (v) => apartar(...v.split('|')));
+  on('desapartar', (v) => desapartar(...v.split('|')));
   const re = $('#recargar', root);
   if (re) re.addEventListener('click', () => { S.listo = false; render(); recargar(); });
 }
@@ -1091,6 +1131,35 @@ function abrirLiquidar(c) {
   });
 }
 
+// ── Apartar la mitad de un pago grande ─────────────────────────
+function apartar(itemId, dia) {
+  const it = S.plan.find((x) => x.id === itemId);
+  if (!it) return;
+  const x = C.apartadosDelMes(S, dia.slice(0, 7)).find((y) => y.it.id === itemId && y.dia === dia);
+  const mes = dia.slice(0, 7);
+  const destino = cuenta(it.cuenta_apartado), pri = principal();
+  hacer(async () => {
+    let movId = null;
+    if (destino && pri && destino.id !== pri.id && x) {
+      const monto = Math.round(convertir(x.monto, 'CRC', pri.moneda) * 100) / 100;
+      const g = await db.guardarMovimiento({ tipo: 'transferencia', monto, fecha: C.hoyISO() < dia ? C.hoyISO() : dia,
+        cuenta_origen: pri.id, cuenta_destino: destino.id,
+        monto_destino: destino.moneda !== pri.moneda ? Math.round(convertir(monto, pri.moneda, destino.moneda) * 100) / 100 : null,
+        descripcion: 'Apartado para ' + it.nombre });
+      movId = g.id;
+    }
+    await db.marcarPago(itemId, mes, 'apartado', movId, dia);
+  }, 'Apartado ✓ ' + (x ? crc(x.monto) : ''));
+}
+function desapartar(itemId, dia) {
+  const mes = dia.slice(0, 7);
+  const marca = (S.pagosMes || []).find((r) => r.plan_item === itemId && r.mes === mes && r.parte === dia);
+  hacer(async () => {
+    await db.desmarcarPago(itemId, mes, dia);
+    if (marca && marca.movimiento) await db.borrarMovimiento(marca.movimiento);
+  }, 'Desmarcado');
+}
+
 // ── Marcar un pago fijo como pagado ────────────────────────────
 function abrirPagar(it) {
   if (!it) return;
@@ -1098,7 +1167,7 @@ function abrirPagar(it) {
   const x = P.lista.find((y) => y.it.id === it.id);
   const pri = principal();
   const lista = activas();
-  const sel = (pri || lista[0] || {}).id;
+  const sel = (cuenta(it.cuenta_apartado) || pri || lista[0] || {}).id;
   const c0 = cuenta(sel);
   const montoIni = c0 ? convertir(x ? x.monto : 0, 'CRC', c0.moneda) : (x ? x.monto : 0);
   const [y, m] = S.mes.split('-').map(Number);
@@ -1171,6 +1240,9 @@ function abrirPlan(it) {
       <div class="fld"><label for="p-medio">Se paga con</label><select class="inp" id="p-medio">
         ${['Az', 'Black', 'Roja', 'SINPE', 'Efectivo'].map((x) => `<option${(it.medio || 'Az') === x ? ' selected' : ''}>${x}</option>`).join('')}</select></div>
     </div>
+    <label class="check"><input type="checkbox" id="p-dividir"${it.dividir || (nuevo && it.tipo === 'universidad') ? ' checked' : ''}><span>Apartar la mitad en cada quincena<br><span class="sub">Te recuerdo en los dos pagos antes del cobro cuánto meter, para no sacarlo todo de una vez.</span></span></label>
+    <div class="fld" id="p-cuenta-wrap"${it.dividir || (nuevo && it.tipo === 'universidad') ? '' : ' hidden'}><label for="p-cuenta">¿Dónde lo apartás? (opcional)</label>
+      <select class="inp" id="p-cuenta"><option value="">Lo dejo en mi cuenta principal, solo recordame</option>${activas().filter((c) => c.tipo !== 'certificado').map((c) => `<option value="${esc(c.id)}"${it.cuenta_apartado === c.id ? ' selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></div>
     <div class="fld"><label for="p-palabras">Palabras para reconocer el cobro en tus gastos (separadas por coma)</label>
       <input class="inp" id="p-palabras" value="${esc(it.palabras || '')}" placeholder="${it.tipo === 'suscripcion' ? 'netflix' : 'luz, cnfl'}"></div>
     <div class="fld"><label for="p-notas">Notas</label><input class="inp" id="p-notas" value="${esc(it.notas || '')}"></div>
@@ -1185,6 +1257,7 @@ function abrirPlan(it) {
     }));
     const per = $('#p-per');
     if (per) per.addEventListener('change', () => { $('#p-anual-wrap').hidden = per.value !== 'anual'; });
+    $('#p-dividir').addEventListener('change', () => { $('#p-cuenta-wrap').hidden = !$('#p-dividir').checked; });
     $('#p-save').addEventListener('click', () => {
       const nombre = $('#p-nombre').value.trim();
       if (!nombre) { $('#p-err').innerHTML = '<p class="err">Ponele nombre.</p>'; return; }
@@ -1196,6 +1269,8 @@ function abrirPlan(it) {
         bolsa: $('#p-bolsa').value, medio: $('#p-medio').value, notas: $('#p-notas').value.trim() || null,
         activo: $('#p-activo').checked, dia_cobro: dia, meses: mesesSel.length ? mesesSel : null,
         palabras: $('#p-palabras').value.trim() || null,
+        dividir: $('#p-dividir').checked,
+        cuenta_apartado: $('#p-dividir').checked ? ($('#p-cuenta').value || null) : null,
       };
       if (it.tipo === 'universidad') {
         Object.assign(fila, { periodicidad: 'cuatrimestral', pagos: Math.max(1, Math.round(num($('#p-pagos').value)) || 3) });
