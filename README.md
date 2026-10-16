@@ -1,8 +1,16 @@
-# Mi Plata
+# Dra. Betty
 
-App personal de finanzas: gastos, ingresos, ahorros y colchón de emergencias. Funciona en el cel y en la compu, se instala como app y guarda todo en una base de datos Postgres propia (Supabase).
+App personal de finanzas con una perezosa de asistente: gastos, pagos fijos, ahorros, certificados y colchón de emergencias. Funciona en el cel y en la compu, se instala como app y guarda todo en una base de datos Postgres propia (Supabase).
 
-**En vivo:** https://atza1117.github.io/mi-plata/
+**En vivo:** https://atza1117.github.io/Dra.Betty/
+
+## Qué hace
+
+- **Inicio**: cuánto te queda en el mes, plan contra lo real (en rojo lo que se pasa), avisos y la Dra. Betty comentando cómo vas.
+- **Movimientos**: todo lo anotado, con búsqueda y filtros; tocá cualquiera para editarlo.
+- **Pagos**: checklist del mes de suscripciones, recibos y universidad, con día de cobro, meses en que se cobra y botón "Este mes no". Reconoce solos los cobros que ya anotaste y te dice cuánto apartar del pago del 15 y del 30, con los dólares convertidos.
+- **Gráficas**: en qué se fue la plata, los últimos 6 meses y cómo crece tu ahorro.
+- **Cuentas**: saldos, botones para sacar o meter plata del ahorro sin que cuente como gasto, y certificados que se renuevan o liquidan cuando vencen.
 
 ## Cómo piensa la app
 
@@ -23,7 +31,7 @@ Los saldos no se escriben a mano: la base los calcula con los movimientos (vista
 ### 1. La base de datos
 1. Creá una cuenta gratis en [supabase.com](https://supabase.com) y un proyecto nuevo (región: *East US* es la más cercana).
 2. **SQL Editor → New query**, pegá todo [`supabase/schema.sql`](supabase/schema.sql) y tocá **Run**.
-3. **Authentication → URL Configuration → Site URL**: `https://atza1117.github.io/mi-plata/`
+3. **Authentication → URL Configuration → Site URL**: `https://atza1117.github.io/Dra.Betty/`
 4. **Project Settings → API**: copiá el *Project URL* y la key *anon public* y ponelos en [`js/config.js`](js/config.js).
 
 > La *anon key* está hecha para ir en código público: sin iniciar sesión no da acceso a nada, porque cada tabla tiene reglas (RLS) que solo dejan ver lo propio. **Nunca** pongas la *service_role key* en el repo.
