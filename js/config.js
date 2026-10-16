@@ -14,5 +14,5 @@
 //  guarda en ese dispositivo.
 // ════════════════════════════════════════════════════════════════
 
-export const SUPABASE_URL = '';
-export const SUPABASE_ANON_KEY = '';
+   export const SUPABASE_URL = 'https://ckongzmutfghuljkbwku.supabase.co';
+   export const SUPABASE_ANON_KEY = 'sb_publishable_Y9ot9s3DwEu6gSbUml5Bdw_1HtUF4nJ';
