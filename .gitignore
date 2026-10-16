@@ -1,0 +1,6 @@
+# Tus datos reales NUNCA van al repo (es público)
+seed.sql
+*.seed.sql
+privado/
+.DS_Store
+node_modules/

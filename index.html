@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mi Plata</title>
+<meta name="description" content="Tus gastos, ahorros y colchón de emergencias, en el cel y en la compu.">
+<meta name="theme-color" content="#13161C">
+<meta name="color-scheme" content="dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mi Plata">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..700&family=Instrument+Sans:wght@400..700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top" id="top" hidden>
+  <div class="wrap">
+    <div class="top-in">
+      <div class="brand">Mi <i>Plata</i></div>
+      <div class="mes" id="mes-sel">
+        <button id="mprev" aria-label="Mes anterior">‹</button>
+        <b id="mlbl">—</b>
+        <button id="mnext" aria-label="Mes siguiente">›</button>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="resumen" aria-current="true"><span class="ic" aria-hidden="true">◎</span>Resumen</button>
+      <button data-tab="movs"><span class="ic" aria-hidden="true">≡</span>Movimientos</button>
+      <button data-tab="cuentas"><span class="ic" aria-hidden="true">◆</span>Cuentas</button>
+      <button data-tab="plan"><span class="ic" aria-hidden="true">⚙</span>Plan</button>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <main id="app">
+    <div class="arranque">
+      <div class="brand big">Mi <i>Plata</i></div>
+      <p class="sub">Abriendo…</p>
+    </div>
+  </main>
+</div>
+
+<button class="fab" id="fab" aria-label="Anotar algo" hidden>+</button>
+<div id="modal"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<noscript><p style="padding:24px;color:#E4E8EE">Mi Plata necesita JavaScript activado.</p></noscript>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
