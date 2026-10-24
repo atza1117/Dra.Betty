@@ -7,6 +7,7 @@ App personal de finanzas con una perezosa de asistente: gastos, pagos fijos, aho
 ## Qué hace
 
 - **Inicio**: cuánto te queda en el mes, plan contra lo real (en rojo lo que se pasa), avisos y la Dra. Betty comentando cómo vas.
+- **Correos del banco**: un script de Google lee tus etiquetas de Gmail *Banco Popular* y *BAC* cada 15 minutos y le pasa los correos a la app. En Inicio aparecen listos para **Anotar** de un toque (con categoría y dólares convertidos), **Revisar** o **No anotar**. Avisa si parece que ya lo anotaste a mano, y descarta solos los traslados entre tus cuentas y las autorizaciones en cero.
 - **Movimientos**: todo lo anotado, con búsqueda y filtros; tocá cualquiera para editarlo.
 - **Pagos**: checklist del mes de suscripciones, recibos y universidad, con día de cobro, meses en que se cobra y botón "Este mes no". Reconoce solos los cobros que ya anotaste y te dice cuánto apartar del pago del 15 y del 30, con los dólares convertidos.
 - **Gráficas**: en qué se fue la plata, los últimos 6 meses y cómo crece tu ahorro.
@@ -43,7 +44,13 @@ Los saldos no se escriben a mano: la base los calcula con los movimientos (vista
 4. Cerrá los registros para que nadie más pueda crear usuarios en tu base:
    **Authentication → Sign In / Providers → Email → desactivá "Allow new users to sign up"**.
 
-### 3. Instalarla en el cel
+### 3. Conectar Gmail (para que lea los correos del banco)
+1. Si tu base es de antes de esta función, corré [`supabase/correos.sql`](supabase/correos.sql) en el SQL Editor (los proyectos nuevos ya lo traen en `schema.sql`).
+2. En la app: **⚙ Ajustes → Correos del banco → Conectar Gmail** y seguí los pasos. La app arma el script con tu llave; lo pegás en [script.google.com](https://script.google.com) y ejecutás `instalar` una vez.
+
+La llave del buzón solo sirve para meter correos en tu bandeja: no deja leer ni cambiar nada. En la base queda solo su huella (sha256). Si la perdés o querés cambiarla, tocá *Hacer un script nuevo* y la vieja deja de servir.
+
+### 4. Instalarla en el cel
 - **Android (Chrome):** abrí el link → menú ⋮ → **Instalar app**.
 - **iPhone (Safari):** abrí el link → botón Compartir → **Agregar a inicio**.
 
@@ -54,10 +61,12 @@ index.html            la página
 styles.css            estilos
 js/app.js             pantallas y formularios
 js/calculos.js        cálculos puros (resumen del mes, colchón, plan, avisos)
-js/lector.js          lee correos de Banco Popular y BAC pegados en la app
+js/lector.js          lee correos de Banco Popular y BAC (pegados o llegados de Gmail)
+gmail/DraBettyCorreos.gs  script de Google que manda los correos del banco a la app
 js/db.js              todo lo que habla con Supabase
 js/config.js          URL y anon key de tu proyecto
 supabase/schema.sql   tablas, vista de saldos y reglas de seguridad
+supabase/correos.sql  solo la bandeja de correos (para bases ya creadas)
 sw.js                 permite instalarla y abrirla sin internet
 ```
 
