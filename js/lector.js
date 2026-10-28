@@ -72,7 +72,7 @@ function leerFecha(txt) {
 export function categoriaComercio(c) {
   c = String(c || '').toLowerCase();
   if (/uber|didi|taxi|tochi|cabify/.test(c)) return 'Uber / taxi';
-  if (/maxipali|walmart|automercado|masxmenos|mas x menos|super|fresh market|pali|am pm|minisuper|go market/.test(c)) return 'Supermercado';
+  if (/maxipali|walmart|automercado|auto mercado|masxmenos|mas x menos|super|fresh market|pali|am pm|minisuper|go market/.test(c)) return 'Supermercado';
   if (/netflix|spotify|apple|anthropic|crunchy|google|youtube|disney|paypal|prime|hbo/.test(c)) return 'Suscripción';
   if (/farmacia|fischel|farmavalue|medismart|medic|clinica|hospital/.test(c)) return 'Salud';
   if (/pizza|burger|kfc|spoon|subway|starbucks|restaur|pops|mcdonald|mc donald|musmanni|panaderia|panadero|cafe|freddo|moyo|grill|sushi|taco/.test(c)) return 'Comida fuera';
@@ -109,7 +109,7 @@ export function parsearCorreo(raw, tipoCambio) {
     const idO = campo(txt, 'Identificaci[oó]n Origen');
     const idD = campo(txt, 'Identificaci[oó]n Destino');
     if (idO && idD && idO === idD) {
-      return { ok: false, error: 'Es una transferencia entre tus propias cuentas (misma cédula). Anotala con "Mover plata", no como gasto.' };
+      return { ok: false, ignorar: true, error: 'Es una transferencia entre tus propias cuentas (misma cédula). Anotala con "Mover plata", no como gasto.' };
     }
     const mm = leerMonto(campo(txt, 'Monto Enviado') || campo(txt, 'Monto Neto') || campo(txt, 'Monto'));
     if (!mm || !mm.monto) return { ok: false, error: 'No encontré el monto en este correo.' };
@@ -139,7 +139,7 @@ export function parsearCorreo(raw, tipoCambio) {
   }
   const mc = leerMonto(campo(txt, 'Monto'));
   if (!mc) return { ok: false, error: 'No encontré el monto en este correo.' };
-  if (!mc.monto) return { ok: false, error: 'El monto venía en cero: es solo una autorización, no un cobro.' };
+  if (!mc.monto) return { ok: false, ignorar: true, error: 'El monto venía en cero: es solo una autorización, no un cobro.' };
   const comercio = campo(txt, 'Comercio') || 'Compra';
   const enCRC = mc.moneda === 'USD' && tc ? mc.monto * tc : mc.monto;
   return {

@@ -106,12 +106,13 @@ async function todas(tabla, orden, asc = false) {
 }
 
 export async function cargarTodo() {
-  const [cuentas, movimientos, plan, aj, pagosMes] = await Promise.all([
+  const [cuentas, movimientos, plan, aj, pagosMes, buzon] = await Promise.all([
     todas('saldos', 'orden', true),
     todas('movimientos', 'fecha'),
     todas('plan_items', 'nombre', true),
     cliente().from('ajustes').select('*').maybeSingle(),
     todas('pagos_mes', 'mes'),
+    bandeja(),
   ]);
   if (aj.error) throw falla(aj.error, 'Leyendo ajustes');
   const num = (o, ks) => { ks.forEach((k) => { if (o[k] != null) o[k] = Number(o[k]); }); return o; };
@@ -122,7 +123,19 @@ export async function cargarTodo() {
     ? num({ ...aj.data }, ['tipo_cambio', 'ingreso_quincena', 'meses_colchon', 'plan_ahorro', 'plan_apoyo', 'plan_antojos', 'dia_pago1', 'dia_pago2'])
     : null;
   plan.forEach((p) => num(p, ['dia_cobro']));
-  return { cuentas, movimientos, plan, ajustes, pagosMes };
+  return { cuentas, movimientos, plan, ajustes, pagosMes, correos: buzon.correos, buzon: buzon.buzon };
+}
+
+// Correos del banco que mandó el script de Gmail. Si la base todavía no
+// tiene la bandeja (falta correr la parte nueva del schema), la app sigue igual.
+async function bandeja() {
+  const [c, b] = await Promise.all([
+    cliente().from('correos').select('id,gmail_id,banco,asunto,recibido,cuerpo')
+      .eq('estado', 'pendiente').order('recibido', { ascending: false }).limit(300),
+    cliente().from('buzon').select('creada,ultimo_uso').maybeSingle(),
+  ]);
+  if (c.error) return { correos: [], buzon: null, sinBandeja: true };
+  return { correos: c.data || [], buzon: b.error ? null : b.data };
 }
 
 // ── Escritura ──────────────────────────────────────────────────
@@ -187,4 +200,25 @@ export async function marcarPago(planItem, mes, estado, movimiento = null, parte
 export async function desmarcarPago(planItem, mes, parte = 'pago') {
   const { error } = await cliente().from('pagos_mes').delete().eq('plan_item', planItem).eq('mes', mes).eq('parte', parte);
   if (error) throw falla(error, 'Desmarcando el pago');
+}
+
+// ── Correos del banco ──────────────────────────────────────────
+export async function marcarCorreo(id, estado, movimiento = null) {
+  const { error } = await cliente().from('correos').update({ estado, movimiento }).eq('id', id);
+  if (error) throw falla(error, 'Marcando el correo');
+}
+export async function marcarCorreos(ids, estado) {
+  if (!ids.length) return;
+  const { error } = await cliente().from('correos').update({ estado }).in('id', ids);
+  if (error) throw falla(error, 'Marcando los correos');
+}
+export async function crearLlaveBuzon() {
+  const { data, error } = await cliente().rpc('crear_llave_buzon');
+  if (error) {
+    if (/crear_llave_buzon|Could not find the function/i.test(error.message || '')) {
+      throw new Error('A la base le falta la parte de correos. Corré supabase/correos.sql en el SQL Editor.');
+    }
+    throw falla(error, 'Creando la llave');
+  }
+  return data;
 }

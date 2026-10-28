@@ -62,6 +62,7 @@ async function recargar() {
   try {
     const d = await db.cargarTodo();
     Object.assign(S, d, { listo: true });
+    limpiarBandeja();
   } catch (e) {
     toast(e.message, true);
     S.listo = true;
@@ -227,6 +228,8 @@ function vInicio() {
       <div><div class="k">Ahorro neto</div><div class="v ${r.ahorroNeto < 0 ? 'neg' : 'pos'}">${crc(r.ahorroNeto)}</div></div>
       <div><div class="k">Q1 · Q2</div><div class="v peq">${crc(r.q1)} · ${crc(r.q2)}</div></div>
     </div></div>`;
+
+  h += vBandeja();
 
   const av = C.avisos(S, S.mes);
   if (av.length) {
@@ -636,6 +639,13 @@ function abrirAjustes() {
     <button class="btn pri wide" id="guardar-ajustes">Guardar</button>
     <p class="nota">Necesidades y Suscripciones salen solas de tus pagos fijos. Apoyo familiar, Antojos y Ahorro los ponés vos.</p>
     <div class="info" style="margin-top:16px">
+      <div><b>Correos del banco</b></div>
+      <div class="sub">${S.buzon
+        ? `Gmail conectado.${S.buzon.ultimo_uso ? ' Último correo recibido: ' + esc(fechaHora(S.buzon.ultimo_uso)) + '.' : ' Todavía no ha llegado ningún correo.'}`
+        : 'Conectá tu Gmail y los cobros de Banco Popular y BAC te aparecen solos en Inicio.'}</div>
+      <div class="btnrow" style="justify-content:flex-start"><button class="btn sm${S.buzon ? '' : ' pri'}" id="conectar-gmail">${S.buzon ? 'Hacer un script nuevo' : 'Conectar Gmail'}</button></div>
+    </div>
+    <div class="info" style="margin-top:16px">
       <div><span>Tus datos están en tu base de Supabase.</span></div>
       <div class="btnrow" style="justify-content:flex-start"><button class="btn sm" id="exportar">Descargar movimientos (CSV)</button>
       <button class="btn sm" id="salir">Cerrar sesión</button></div>
@@ -644,6 +654,15 @@ function abrirAjustes() {
   abrirHoja('Ajustes', h, () => {
     $('#guardar-ajustes').addEventListener('click', () => { guardarAjustes(); cerrar(); });
     $('#exportar').addEventListener('click', exportarCSV);
+    const cg = $('#conectar-gmail');
+    cg.addEventListener('click', () => {
+      if (S.buzon && cg.dataset.ok !== '1') {
+        cg.dataset.ok = '1';
+        cg.textContent = 'Tocá otra vez (el script viejo deja de servir)';
+        return;
+      }
+      conectarGmail();
+    });
     $('#salir').addEventListener('click', async () => { cerrar(); await db.salir(); pantallaLogin('Sesión cerrada.'); });
   });
 }
@@ -675,6 +694,16 @@ function conectar(root) {
   on('no-aplica', (id) => hacer(() => db.marcarPago(id, S.mes, 'no_aplica'), 'Listo, este mes no cuenta'));
   on('desmarcar', (id) => hacer(() => db.desmarcarPago(id, S.mes), 'Desmarcado'));
   on('apartar', (v) => apartar(...v.split('|')));
+  on('correo-anotar', (id) => anotarCorreo(id));
+  on('correo-revisar', (id) => revisarCorreo(id));
+  on('correo-no', (id) => hacer(() => db.marcarCorreo(id, 'descartado'), 'Listo, no se anota'));
+  on('correo-mas', () => { S.verBandeja = true; render(); });
+  const todos = $('#correo-todos', root);
+  if (todos) todos.addEventListener('click', () => {
+    const n = bandeja().listos.filter((x) => x.fila && !x.rep).length;
+    if (todos.dataset.ok !== '1') { todos.dataset.ok = '1'; todos.textContent = `Tocá otra vez: anoto ${n}`; return; }
+    anotarTodos();
+  });
   on('desapartar', (v) => desapartar(...v.split('|')));
   const re = $('#recargar', root);
   if (re) re.addEventListener('click', () => { S.listo = false; render(); recargar(); });
@@ -737,7 +766,7 @@ function abrirNuevo(modo = 'gasto', preset = {}) {
       $$('#seg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.m === m ? 'true' : 'false'));
       const extra = m === inicial ? preset : {};
       $('#form-slot').innerHTML = formMov({ modo: m, fecha: C.hoyISO(), ...extra });
-      conectarForm({ modo: m });
+      conectarForm({ modo: m, _correo: m === inicial ? preset._correo : undefined });
     };
     $$('#seg button').forEach((b) => b.addEventListener('click', () => pinta(b.dataset.m)));
     pinta(modo);
@@ -946,7 +975,10 @@ function guardarMov(m) {
   cerrar();
   const msg = { gasto: 'Gasto anotado', ingreso: 'Ingreso anotado', ahorrar: 'Ahorro anotado',
                 sacar: 'Retiro anotado. No cuenta como gasto', mover: 'Movida anotada' }[modo];
-  hacer(() => db.guardarMovimiento(fila), m.id || modo === 'ahorrar' ? (m.id ? 'Guardado' : '') : msg)
+  hacer(async () => {
+    const g = await db.guardarMovimiento(fila);
+    if (m._correo && g) await db.marcarCorreo(m._correo, 'anotado', g.id);
+  }, m.id || modo === 'ahorrar' ? (m.id ? 'Guardado' : '') : msg)
     .then((ok) => { if (ok && !m.id && modo === 'ahorrar') celebrar('¡Eso! Apartaste ' + dinero(monto, (cuenta(fila.cuenta_origen) || {}).moneda)); });
 }
 
@@ -1302,6 +1334,195 @@ function exportarCSV() {
   a.href = url; a.download = `dra-betty-${C.hoyISO()}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Correos del banco (los manda el script de Gmail)
+// ════════════════════════════════════════════════════════════════
+function fechaHora(ts) {
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  return `${fechaCorta(C.hoyISO(d))}, ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function sumarDias(iso, n) {
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return C.hoyISO(d);
+}
+
+/** Lee el correo con el mismo lector de "Pegar el correo" y arma el movimiento. */
+function leerCorreoBanco(c) {
+  if (c._r) return c;
+  const r = parsearCorreo(c.cuerpo || c.asunto || '', tcambio());
+  c._r = r;
+  if (!r.ok) return c;
+  const pri = principal();
+  if (!pri) return c;
+  let monto = r.monto, nota = '';
+  if (r.moneda !== pri.moneda) {
+    const t = tcambio();
+    if (!t) return c;   // sin tipo de cambio no se puede anotar de un toque
+    monto = r.moneda === 'USD' ? r.monto * t : r.monto / t;
+    nota = r.moneda === 'USD' ? ` (US$${r.monto.toFixed(2)})` : ` (₡${miles(Math.round(r.monto))})`;
+  }
+  monto = Math.round(monto * 100) / 100;
+  const desc = (r.descripcion || '').slice(0, 120) + nota;
+  if (r.tipo === 'ingreso') {
+    c._fila = { tipo: 'ingreso', monto, fecha: r.fecha, cuenta_destino: pri.id, categoria: 'Otro', descripcion: desc };
+  } else {
+    const cat = C.CATEGORIAS.includes(r.categoria) ? r.categoria : 'Otros';
+    c._fila = { tipo: 'gasto', monto, fecha: r.fecha, cuenta_origen: pri.id, categoria: cat,
+                bolsa: C.CAT_BOLSA[cat], medio: r.medio || 'Az', descripcion: desc };
+  }
+  // ¿ya está anotado a mano? mismo tipo, mismo monto y fecha a un día de distancia
+  const crcDe = (m) => C.movCRC(m, ixCuentas(), tcambio());
+  const objetivo = crcDe(c._fila);
+  c._rep = S.movimientos.find((m) => m.tipo === c._fila.tipo
+    && Math.abs(new Date(m.fecha) - new Date(c._fila.fecha)) <= 864e5 * 1.01
+    && Math.abs(crcDe(m) - objetivo) <= Math.max(1, objetivo * 0.01)) || null;
+  return c;
+}
+
+function bandeja() {
+  const listos = [], raros = [];
+  (S.correos || []).forEach((c) => {
+    leerCorreoBanco(c);
+    if (c._r.ok) listos.push({ c, r: c._r, fila: c._fila, rep: c._rep });
+    else if (!c._r.ignorar) raros.push(c);
+  });
+  listos.sort((a, b) => (b.r.fecha || '').localeCompare(a.r.fecha || ''));
+  return { listos, raros };
+}
+
+/** Traslados entre cuentas propias y autorizaciones en cero no son gastos: se descartan solos. */
+function limpiarBandeja() {
+  const fuera = (S.correos || []).filter((c) => { leerCorreoBanco(c); return c._r.ignorar; });
+  if (!fuera.length) return;
+  S.correos = S.correos.filter((c) => !fuera.includes(c));
+  db.marcarCorreos(fuera.map((c) => c.id), 'descartado').catch(() => {});
+}
+
+function vBandeja() {
+  const { listos, raros } = bandeja();
+  if (!listos.length && !raros.length) return '';
+  const max = S.verBandeja ? listos.length : 5;
+  let h = `<div class="card bandeja"><h2>Del banco <small>${listos.length} por anotar</small></h2>`;
+  listos.slice(0, max).forEach(({ c, r, fila, rep }) => {
+    const esIng = r.tipo === 'ingreso';
+    const b = fila ? (fila.bolsa || '') : '';
+    const col = esIng ? 'var(--aho)' : (BCOLOR[b] || 'var(--dim)');
+    const monto = r.moneda === 'USD' ? usd(r.monto) : crc(r.monto);
+    h += `<div class="correo">
+      <div class="t1">${esc(r.descripcion || c.asunto || 'Movimiento')}</div>
+      <div class="amt${esIng ? ' pos' : ''}">${esIng ? '+' : ''}${monto}${r.moneda === 'USD' && fila ? `<small>${crc(fila.monto)}</small>` : ''}</div>
+      <div class="t2"><span class="dot" style="background:${col}"></span>${esc(esIng ? 'Te entró' : r.categoria)} · ${esc(c.banco || r.medio || '')} · ${fechaCorta(r.fecha)}
+        ${rep ? `<span class="chip pronto" title="Hay un movimiento igual: ${esc(rep.descripcion || rep.categoria || '')}">¿Ya lo anotaste?</span>` : ''}</div>
+      <div class="acciones">
+        ${fila ? `<button class="btn sm pri" data-correo-anotar="${esc(c.id)}">Anotar</button>` : ''}
+        <button class="btn sm" data-correo-revisar="${esc(c.id)}">${fila ? 'Revisar' : 'Revisar y anotar'}</button>
+        <button class="btn sm" data-correo-no="${esc(c.id)}">${rep ? 'Ya está' : 'No anotar'}</button>
+      </div></div>`;
+  });
+  if (listos.length > max) h += `<button class="btn sm" data-correo-mas="1">Ver los ${listos.length - max} que faltan</button>`;
+  const deUnToque = listos.filter((x) => x.fila && !x.rep).length;
+  if (deUnToque > 1) h += `<div class="btnrow" style="margin-top:10px"><button class="btn pri" id="correo-todos">Anotar los ${deUnToque}${listos.some((x) => x.rep) ? ' que no están repetidos' : ''}</button></div>`;
+  if (raros.length) {
+    h += `<details class="raros"><summary>${raros.length} correo${raros.length === 1 ? '' : 's'} que no entendí</summary>
+      ${raros.map((c) => `<div class="correo">
+        <div class="t1">${esc(c.asunto || 'Correo del banco')}</div>
+        <div class="t2">${esc(c.banco || '')} · ${c.recibido ? fechaCorta(C.hoyISO(new Date(c.recibido))) : ''}</div>
+        <div class="acciones"><button class="btn sm" data-correo-revisar="${esc(c.id)}">Anotar a mano</button>
+          <button class="btn sm" data-correo-no="${esc(c.id)}">No anotar</button></div></div>`).join('')}
+      <p class="nota">Si un correo así sí era un gasto, anotalo a mano. Si se repite, avisame y le enseño a la Dra. Betty a leerlo.</p></details>`;
+  }
+  return h + '</div>';
+}
+
+function correoPorId(id) { return (S.correos || []).find((c) => c.id === id); }
+
+function anotarCorreo(id) {
+  const c = correoPorId(id);
+  if (!c) return;
+  leerCorreoBanco(c);
+  if (!c._fila) { revisarCorreo(id); return; }
+  const f = c._fila;
+  hacer(async () => {
+    const g = await db.guardarMovimiento(f);
+    await db.marcarCorreo(id, 'anotado', g.id);
+  }, `Anotado: ${f.descripcion || f.categoria}`);
+}
+
+async function anotarTodos() {
+  const lista = bandeja().listos.filter((x) => x.fila && !x.rep);
+  let n = 0;
+  await hacer(async () => {
+    for (const x of lista) {
+      const g = await db.guardarMovimiento(x.fila);
+      await db.marcarCorreo(x.c.id, 'anotado', g.id);
+      n++;
+    }
+  }, `Anoté ${lista.length} movimiento${lista.length === 1 ? '' : 's'}`);
+  if (n < lista.length) toast(`Anoté ${n} de ${lista.length}. Revisá los que quedaron.`, true);
+}
+
+function revisarCorreo(id) {
+  const c = correoPorId(id);
+  if (!c) return;
+  leerCorreoBanco(c);
+  const r = c._r;
+  if (!r.ok) {
+    abrirNuevo('gasto', { _correo: id, descripcion: c.asunto || '', fecha: c.recibido ? C.hoyISO(new Date(c.recibido)) : C.hoyISO() });
+    return;
+  }
+  const f = c._fila || {};
+  const modo = r.tipo === 'ingreso' ? 'ingreso' : 'gasto';
+  abrirNuevo(modo, {
+    _correo: id, fecha: r.fecha, descripcion: f.descripcion || r.descripcion,
+    monto: f.monto ?? r.monto, categoria: modo === 'ingreso' ? 'Otro' : (f.categoria || r.categoria),
+    bolsa: f.bolsa, medio: r.medio,
+  });
+}
+
+async function conectarGmail() {
+  cerrar();
+  let llave, plantilla;
+  try {
+    [llave, plantilla] = await Promise.all([
+      db.crearLlaveBuzon(),
+      fetch('gmail/DraBettyCorreos.gs', { cache: 'no-store' }).then((r) => {
+        if (!r.ok) throw new Error('No encontré el script en la página. Subí también la carpeta gmail a GitHub.');
+        return r.text();
+      }),
+    ]);
+  } catch (e) { toast(e.message, true); return; }
+  const cx = db.conexion();
+  const ult = S.movimientos.reduce((mx, m) => (m.fecha > mx ? m.fecha : mx), '');
+  // desde el día después del último movimiento (lo de antes ya está anotado),
+  // pero al menos 3 días atrás por si ya fuiste anotando cosas a mano
+  let desde = ult ? sumarDias(ult, 1) : sumarDias(C.hoyISO(), -7);
+  if (desde > sumarDias(C.hoyISO(), -3)) desde = sumarDias(C.hoyISO(), -3);
+  const script = plantilla.replace('__URL__', cx.url).replace('__KEY__', cx.key)
+    .replace('__LLAVE__', llave).replace('__DESDE__', desde);
+  abrirHoja('Conectar Gmail', `
+    <ol class="pasos">
+      <li>Tocá <b>Copiar el script</b>.</li>
+      <li>Abrí <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> con tu cuenta de Gmail del banco. Se abre un proyecto nuevo.</li>
+      <li>Borrá lo que trae, pegá el script y guardá (💾).</li>
+      <li>Arriba elegí <b>instalar</b> y tocá <b>▶ Ejecutar</b>.</li>
+      <li>Google pide permiso: <i>Revisar permisos → tu cuenta → Configuración avanzada → Ir al proyecto → Permitir</i>.</li>
+      <li>Listo. En unos minutos los correos desde el ${fechaLarga(desde)} aparecen en Inicio.</li>
+    </ol>
+    <button class="btn pri wide" id="copiar-script">Copiar el script</button>
+    <textarea class="inp script" id="txt-script" readonly aria-label="Script para Google">${esc(script)}</textarea>
+    <p class="nota">Este script trae tu llave del buzón: no lo compartas. Solo sirve para meter correos en tu bandeja; no puede ver ni cambiar nada más.</p>`, () => {
+    $('#copiar-script').addEventListener('click', async () => {
+      const t = $('#txt-script');
+      try { await navigator.clipboard.writeText(script); toast('Script copiado'); }
+      catch (_) { t.focus(); t.select(); toast('Ya quedó seleccionado: copialo con Ctrl+C'); }
+    });
+  });
+  recargar();
 }
 
 // ════════════════════════════════════════════════════════════════
