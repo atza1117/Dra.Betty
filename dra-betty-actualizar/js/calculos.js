@@ -424,31 +424,56 @@ export function diasDePago(mes, S) {
   return [isoDe(y, m, Number(a.dia_pago1) || 15), isoDe(y, m, Number(a.dia_pago2) || 30)];
 }
 export function apartadosDelMes(S, mes, hoy = new Date()) {
+  // Regla simple: en cada mes en que se cobra, la mitad sale del pago del 15 y la otra mitad del pago del 30.
   const t = tc(S);
   const marcas = {};
   (S.pagosMes || []).forEach((r) => { if (r.mes === mes && r.parte && r.parte !== 'pago') marcas[r.plan_item + '|' + r.parte] = r; });
-  const pagos = [];
-  for (let i = -1; i <= 2; i++) diasDePago(mesShift(mes, i), S).forEach((d) => pagos.push(d));
-  pagos.sort();
-  const [mp1] = diasDePago(mes, S);
+  const [y, m] = mes.split('-').map(Number);
+  const [dp1, dp2] = diasDePago(mes, S);
   const hoyIso = hoyISO(hoy);
   const out = [];
-  S.plan.filter((it) => it.activo && it.dividir).forEach((it) => {
+  S.plan.filter((it) => it.activo && it.dividir && aplicaEnMes(it, mes)).forEach((it) => {
     const mitad = montoCobro(it, t) / 2;
-    for (let i = 0; i <= 3; i++) {
-      const mc = mesShift(mes, i);
-      if (!aplicaEnMes(it, mc)) continue;
-      const [y, m] = mc.split('-').map(Number);
-      const cobro = it.dia_cobro ? isoDe(y, m, it.dia_cobro) : isoDe(y, m, 31);
-      const antes = pagos.filter((d) => d < cobro).slice(-2);
-      antes.forEach((dp) => {
-        if (dp.slice(0, 7) !== mes) return;
-        const marca = marcas[it.id + '|' + dp];
-        const dias = Math.round((new Date(dp + 'T12:00:00') - new Date(hoyIso + 'T12:00:00')) / 86400000);
-        out.push({ it, dia: dp, cual: dp === mp1 ? 'p1' : 'p2', para: cobro, monto: mitad,
-                   estado: marca ? 'apartado' : 'pendiente', marca, dias });
-      });
-    }
+    const para = it.dia_cobro ? isoDe(y, m, it.dia_cobro) : isoDe(y, m, 31);
+    [dp1, dp2].forEach((dp) => {
+      const marca = marcas[it.id + '|' + dp];
+      const dias = Math.round((new Date(dp + 'T12:00:00') - new Date(hoyIso + 'T12:00:00')) / 86400000);
+      out.push({ it, dia: dp, cual: dp === dp1 ? 'p1' : 'p2', para, monto: mitad,
+                 estado: marca ? 'apartado' : 'pendiente', marca, dias });
+    });
   });
   return out.sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0));
+}
+
+// ── Cuánto apartar de cada quincena ───────────────────────────
+//  Lo que se cobra entre el día de pago 1 y el día antes del pago 2 sale del primer pago;
+//  lo demás (del pago 2 en adelante y los primeros días del mes) sale del segundo.
+//  Lo que no tiene día de cobro, y lo marcado "mitad por quincena", va mitad y mitad.
+export function quincenas(S, mes) {
+  const t = tc(S);
+  const a = S.ajustes || {};
+  const p1 = Number(a.dia_pago1) || 15, p2 = Number(a.dia_pago2) || 30;
+  const grupos = [['suscripcion', 'Suscripciones'], ['fijo', 'Gastos fijos'], ['universidad', 'Universidad']];
+  const filas = Object.fromEntries(grupos.map(([k, n]) => [k, { nombre: n, q1: 0, q2: 0 }]));
+  const det = { q1: [], q2: [] };
+  S.plan.filter((it) => aplicaEnMes(it, mes)).forEach((it) => {
+    const monto = montoCobro(it, t);
+    if (!monto) return;
+    const d = Number(it.dia_cobro) || null;
+    let r1 = 0, r2 = 0, chip;
+    if (it.dividir || !d) { r1 = r2 = monto / 2; chip = it.dividir ? 'mitad' : 'sin día · mitad'; }
+    else if (d >= p1 && d < p2) { r1 = monto; chip = 'día ' + d; }
+    else { r2 = monto; chip = 'día ' + d; }
+    const f = filas[it.tipo] || filas.fijo;
+    f.q1 += r1; f.q2 += r2;
+    if (r1) det.q1.push({ it, monto: r1, chip, dia: d || 99 });
+    if (r2) det.q2.push({ it, monto: r2, chip, dia: d || 99 });
+  });
+  const orden = (x, y) => ((x.dia < p1 ? x.dia + 31 : x.dia) - (y.dia < p1 ? y.dia + 31 : y.dia)) || String(x.it.nombre).localeCompare(y.it.nombre);
+  det.q1.sort(orden); det.q2.sort(orden);
+  const lista = grupos.map(([k]) => filas[k]).filter((f) => f.q1 || f.q2);
+  const total = { q1: lista.reduce((s, f) => s + f.q1, 0), q2: lista.reduce((s, f) => s + f.q2, 0) };
+  const ingreso = Number(a.ingreso_quincena) || 0;
+  return { p1, p2, filas: lista, det, total, ingreso, queda: { q1: ingreso - total.q1, q2: ingreso - total.q2 },
+           parejo: (total.q1 + total.q2) / 2 };
 }

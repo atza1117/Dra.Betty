@@ -359,3 +359,14 @@ td{padding:8px 8px 8px 0; border-top:1px solid var(--line); vertical-align:top; 
 .pasos a{color:var(--gold)}
 .inp.script{margin-top:12px; height:130px; font:12px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space:pre; overflow:auto}
 .del-correo{color:var(--gold); font-size:11px}
+/* ── Tabla de cuánto apartar por quincena ── */
+.tabla-q{overflow-x:auto; margin:0 -2px}
+.tabla-q table{width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums}
+.tabla-q th, .tabla-q td{padding:8px 3px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line)}
+.tabla-q thead th{font-size:10.5px; font-weight:800; color:var(--dim); text-transform:uppercase; letter-spacing:.03em; white-space:normal; line-height:1.2}
+.tabla-q tbody th{text-align:left; font-weight:700; text-transform:none; letter-spacing:0; font-size:13px; white-space:normal; line-height:1.25; padding-left:0}
+@media (min-width:500px){ .tabla-q table{font-size:14.5px} .tabla-q th, .tabla-q td{padding:9px 8px} .tabla-q tbody th{font-size:14.5px} }
+.tabla-q tr.tot th, .tabla-q tr.tot td{font-weight:800; color:var(--gold); border-bottom:2px solid var(--line2)}
+.tabla-q tr.sub th, .tabla-q tr.sub td{color:var(--dim); font-weight:600}
+.tabla-q tr.queda th, .tabla-q tr.queda td{font-weight:800; border-bottom:0}
+.tabla-q td.pos{color:var(--pos)} .tabla-q td.neg{color:var(--over)}

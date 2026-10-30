@@ -508,23 +508,26 @@ function vPagos() {
       <div class="track" style="height:10px"><i style="width:${pct}%;background:var(--pos)"></i></div>
       <div class="sub">${P.falta > 0.5 ? `Faltan <b style="color:var(--txt)">${crc(P.falta)}</b> por pagar` : '¡Todo pagado este mes!'}${t ? '' : ' · <span class="neg">falta el tipo de cambio</span>'}</div></div></div>`;
 
-  // cuánto apartar
-  const listaQ = (q) => vis.filter((x) => !x.it.dividir && x.quincena === q && (x.estado === 'pendiente' || x.estado === 'pagado'))
-    .map((x) => ({ chip: 'día ' + x.dia, nombre: x.it.nombre, monto: x.monto }))
-    .concat(P.apartados.filter((x) => x.cual === q).map((x) => ({ chip: 'mitad', nombre: `${x.it.nombre} · para el ${fechaCorta(x.para)}`, monto: x.monto })));
-  const mini = (arr) => arr.length ? arr.map((x) => `<div class="saldo-row"><div class="n"><span class="chip sm">${esc(x.chip)}</span>${esc(x.nombre)}</div><div class="v">${crc(x.monto)}</div></div>`).join('')
+  // cuánto apartar de cada quincena
+  const Q = C.quincenas(S, S.mes);
+  const fila = (n, a, b, cls = '') => `<tr class="${cls}"><th scope="row">${n}</th><td>${crc(a)}</td><td>${crc(b)}</td><td>${crc(a + b)}</td></tr>`;
+  const det = (arr) => arr.length ? arr.map((x) => `<div class="saldo-row"><div class="n"><span class="chip sm">${esc(x.chip)}</span>${esc(x.it.nombre)}</div><div class="v">${crc(x.monto)}</div></div>`).join('')
     : '<p class="vacio" style="padding:6px 0">Nada</p>';
   h += `<div class="card"><h2>¿Cuánto apartar?</h2>
-    <div class="grid2">
-      <div><div class="grupo-hd"><b>Del pago del ${P.p1}</b><span>${crc(P.delP1)}</span></div>${mini(listaQ('p1'))}</div>
-      <div><div class="grupo-hd"><b>Del pago del ${P.p2}</b><span>${crc(P.delP2)}</span></div>${mini(listaQ('p2'))}</div>
-    </div>
-    ${P.porQ.sin > 0 ? `<p class="nota">Los que no tienen día de cobro (${crc(P.porQ.sin)}) los repartí mitad y mitad.</p>` : ''}
-    <div class="info" style="margin:14px 0 0">
-      <div><span>Si preferís apartar parejo</span><b>${crc(P.parejo)} por quincena</b></div>
-      ${P.diaADia ? `<div><span>Y para el día a día (${esc(P.presupuesto.map((x) => x.it.nombre).join(', '))})</span><b>${crc(P.diaADiaQ)} por quincena</b></div>` : ''}
-    </div>
-    <p class="nota">Lo que se cobra entre el ${P.p1} y el ${P.p2 - 1} sale del pago del ${P.p1}; lo del ${P.p2} en adelante y los primeros días del mes, del pago del ${P.p2}. Los días de pago se cambian en ⚙.</p></div>`;
+    <div class="tabla-q"><table>
+      <thead><tr><th></th><th scope="col">Pago del ${Q.p1}</th><th scope="col">Pago del ${Q.p2}</th><th scope="col">Mes</th></tr></thead>
+      <tbody>${Q.filas.map((f) => fila(f.nombre, f.q1, f.q2)).join('')}
+        ${fila('Total a apartar', Q.total.q1, Q.total.q2, 'tot')}
+        ${Q.ingreso ? fila('Te entra', Q.ingreso, Q.ingreso, 'sub') : ''}
+        ${Q.ingreso ? `<tr class="queda"><th scope="row">Te queda</th>${[Q.queda.q1, Q.queda.q2, Q.queda.q1 + Q.queda.q2].map((v) => `<td class="${v < 0 ? 'neg' : 'pos'}">${crc(v)}</td>`).join('')}</tr>` : ''}
+      </tbody></table></div>
+    <div class="info" style="margin:12px 0 0"><div><span>Si preferís apartar lo mismo en las dos</span><b>${crc(Q.parejo)} por quincena</b></div></div>
+    <details class="tabla-ver"><summary>Ver qué sale de cada pago</summary>
+      <div class="grid2" style="margin-top:10px">
+        <div><div class="grupo-hd"><b>Del pago del ${Q.p1}</b><span>${crc(Q.total.q1)}</span></div>${det(Q.det.q1)}</div>
+        <div><div class="grupo-hd"><b>Del pago del ${Q.p2}</b><span>${crc(Q.total.q2)}</span></div>${det(Q.det.q2)}</div>
+      </div></details>
+    <p class="nota">Lo que se cobra del ${Q.p1} al ${Q.p2 - 1} sale del pago del ${Q.p1}. Lo del ${Q.p2} en adelante y los primeros días del mes siguiente, del pago del ${Q.p2}. Lo que no tiene día de cobro o dice "mitad" va mitad y mitad. Los dólares van al tipo de cambio de ⚙ (₡${miles(Math.round(t))}).</p></div>`;
 
   // apartados por quincena
   if (P.apartados.length) {
