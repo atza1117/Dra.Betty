@@ -108,12 +108,19 @@ export function parsearCorreo(raw, tipoCambio) {
     const tipoMov = campo(txt, 'Tipo de [Mm]ovimiento');
     const idO = campo(txt, 'Identificaci[oó]n Origen');
     const idD = campo(txt, 'Identificaci[oó]n Destino');
-    if (idO && idD && idO === idD) {
-      return { ok: false, ignorar: true, error: 'Es una transferencia entre tus propias cuentas (misma cédula). Anotala con "Mover plata", no como gasto.' };
-    }
     const mm = leerMonto(campo(txt, 'Monto Enviado') || campo(txt, 'Monto Neto') || campo(txt, 'Monto'));
-    if (!mm || !mm.monto) return { ok: false, error: 'No encontré el monto en este correo.' };
+    if (mm && /USD|D[oó]lar/i.test(campo(txt, 'Moneda'))) mm.moneda = 'USD';
     const fecha = leerFecha(txt);
+    if (idO && idD && idO === idD) {
+      // plata que pasa entre cuentas tuyas: no es gasto ni ingreso, es una movida
+      return {
+        ok: false, ignorar: true, propia: true, entra: /cr[eé]dito/i.test(tipoMov),
+        monto: mm ? mm.monto : 0, moneda: mm ? mm.moneda : 'CRC', fecha,
+        descripcion: (campo(txt, 'Descripci[oó]n') || '').replace(/_+/g, ' ').trim(),
+        error: 'Es plata entre tus propias cuentas (misma cédula). Anotala como movida, no como gasto.',
+      };
+    }
+    if (!mm || !mm.monto) return { ok: false, error: 'No encontré el monto en este correo.' };
     if (/cr[eé]dito/i.test(tipoMov)) {
       const origen = campo(txt, 'Nombre Origen') || 'SINPE';
       return {
@@ -124,10 +131,10 @@ export function parsearCorreo(raw, tipoCambio) {
       };
     }
     const dest = campo(txt, 'Nombre Destino') || 'SINPE';
-    const nota = campo(txt, 'Descripci[oó]n');
+    const nota = campo(txt, 'Descripci[oó]n').replace(/_+/g, ' ').trim();
     return {
       ok: true, tipo: 'gasto', monto: mm.monto, moneda: mm.moneda, montoOriginal: mm.monto,
-      fecha, categoria: categoriaSinpe(dest), medio: 'SINPE',
+      fecha, categoria: categoriaSinpe(dest + ' ' + nota), medio: 'SINPE',
       descripcion: 'SINPE a ' + dest.toLowerCase() + (nota ? ` (${nota})` : ''),
       aviso: '',
     };

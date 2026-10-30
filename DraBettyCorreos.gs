@@ -13,7 +13,9 @@
 //    4. Listo. Abrí la app: los correos aparecen en Inicio.
 //
 //  No importa si ya abriste el correo en Gmail: igual se lee.
-//  No marca nada como leído ni cambia nada en tu Gmail.
+//  Cuando la Dra. Betty recibe un correo, lo marca como leído en Gmail.
+//  Si ya tenías una versión vieja de este script, pegá esta encima
+//  y volvé a ejecutar  instalar  (no se duplica nada).
 // ════════════════════════════════════════════════════════════════
 
 const BETTY = {
@@ -61,9 +63,10 @@ function enviarCorreos() {
       for (let m = 0; m < msgs.length; m++) {
         const msg = msgs[m];
         const id = msg.getId();
-        if (enviados[id] || msg.getDate() < corte) continue;
+        if (msg.getDate() < corte) continue;
+        if (enviados[id]) { if (msg.isUnread()) msg.markRead(); continue; }
         const r = bettyEnviar(nombre, msg);
-        if (r.ok) { enviados[id] = Date.now(); r.nuevo ? nuevos++ : repetidos++; }
+        if (r.ok) { enviados[id] = Date.now(); msg.markRead(); r.nuevo ? nuevos++ : repetidos++; }
         else {
           errores++;
           Logger.log('✗ No se pudo mandar "' + msg.getSubject() + '": ' + r.error);

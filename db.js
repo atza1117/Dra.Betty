@@ -123,19 +123,22 @@ export async function cargarTodo() {
     ? num({ ...aj.data }, ['tipo_cambio', 'ingreso_quincena', 'meses_colchon', 'plan_ahorro', 'plan_apoyo', 'plan_antojos', 'dia_pago1', 'dia_pago2'])
     : null;
   plan.forEach((p) => num(p, ['dia_cobro']));
-  return { cuentas, movimientos, plan, ajustes, pagosMes, correos: buzon.correos, buzon: buzon.buzon };
+  return { cuentas, movimientos, plan, ajustes, pagosMes, correos: buzon.correos, buzon: buzon.buzon,
+           movCorreo: new Set(buzon.movCorreo) };
 }
 
 // Correos del banco que mandó el script de Gmail. Si la base todavía no
 // tiene la bandeja (falta correr la parte nueva del schema), la app sigue igual.
 async function bandeja() {
-  const [c, b] = await Promise.all([
+  const [c, b, l] = await Promise.all([
     cliente().from('correos').select('id,gmail_id,banco,asunto,recibido,cuerpo')
       .eq('estado', 'pendiente').order('recibido', { ascending: false }).limit(300),
     cliente().from('buzon').select('creada,ultimo_uso').maybeSingle(),
+    cliente().from('correos').select('movimiento').eq('estado', 'anotado').limit(5000),
   ]);
-  if (c.error) return { correos: [], buzon: null, sinBandeja: true };
-  return { correos: c.data || [], buzon: b.error ? null : b.data };
+  if (c.error) return { correos: [], buzon: null, movCorreo: [], sinBandeja: true };
+  return { correos: c.data || [], buzon: b.error ? null : b.data,
+           movCorreo: l.error ? [] : (l.data || []).map((x) => x.movimiento).filter(Boolean) };
 }
 
 // ── Escritura ──────────────────────────────────────────────────
@@ -206,6 +209,13 @@ export async function desmarcarPago(planItem, mes, parte = 'pago') {
 export async function marcarCorreo(id, estado, movimiento = null) {
   const { error } = await cliente().from('correos').update({ estado, movimiento }).eq('id', id);
   if (error) throw falla(error, 'Marcando el correo');
+}
+/** Pasa el correo de pendiente a anotado solo si nadie lo tomó antes (por si la app está abierta en dos lados). */
+export async function tomarCorreo(id) {
+  const { data, error } = await cliente().from('correos').update({ estado: 'anotado' })
+    .eq('id', id).eq('estado', 'pendiente').select('id');
+  if (error) throw falla(error, 'Tomando el correo');
+  return Array.isArray(data) ? data.length > 0 : !!data;
 }
 export async function marcarCorreos(ids, estado) {
   if (!ids.length) return;

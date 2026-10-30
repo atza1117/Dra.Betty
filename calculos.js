@@ -219,11 +219,13 @@ export function avisos(S, mes, hoy = new Date()) {
     });
   }
   if (mes === hoyISO(hoy).slice(0, 7)) {
+    const porDia = {};
     apartadosDelMes(S, mes, hoy).forEach((x) => {
-      if (x.estado !== 'pendiente') return;
-      if (x.dias <= 0) out.push({ nivel: 'mal', apartar: x });
-      else if (x.dias <= 2) out.push({ nivel: 'ojo', apartar: x });
+      if (x.estado !== 'pendiente' || x.dias > 3 || x.dias < -5) return;
+      const g = porDia[x.dia] || (porDia[x.dia] = { dia: x.dia, dias: x.dias, monto: 0, n: 0 });
+      g.monto += x.monto; g.n++;
     });
+    Object.values(porDia).forEach((g) => out.push({ nivel: g.dias <= 0 ? 'mal' : 'ojo', apartarDia: g }));
   }
   if (!tc(S) && S.cuentas.some((c) => c.moneda === 'USD')) out.push({ nivel: 'ojo', sinTipoCambio: true });
   const c = colchon(S);
@@ -373,8 +375,13 @@ export function pagosDelMes(S, mes, hoy = new Date()) {
     else if (reg && reg.estado === 'no_aplica') estado = 'no';
     else if (reg && reg.estado === 'pagado') { estado = 'pagado'; mov = S.movimientos.find((m) => m.id === reg.movimiento) || null; }
     else {
+      // Solo se da por pagado solo si el gasto tiene el nombre Y un monto parecido (±25 %).
+      // Un SINPE de ₡3.000 que dice "luz" no paga una luz de ₡20.000.
       const ks = claves(it);
-      mov = gastos.find((g) => !usados.has(g.id) && ks.some((k) => normalizar(`${g.descripcion || ''} ${g.categoria || ''}`).includes(k)));
+      const ix = Object.fromEntries(S.cuentas.map((c) => [c.id, c]));
+      const cerca = (g) => { const v = movCRC(g, ix, t); return Math.abs(v - monto) <= Math.max(monto * 0.25, 300); };
+      mov = gastos.find((g) => !usados.has(g.id) && cerca(g)
+        && ks.some((k) => normalizar(`${g.descripcion || ''}`).includes(k)));
       if (mov) { estado = 'pagado'; detectado = true; usados.add(mov.id); }
       else estado = 'pendiente';
     }
@@ -424,31 +431,67 @@ export function diasDePago(mes, S) {
   return [isoDe(y, m, Number(a.dia_pago1) || 15), isoDe(y, m, Number(a.dia_pago2) || 30)];
 }
 export function apartadosDelMes(S, mes, hoy = new Date()) {
+  // Cada cobro se aparta en dos mitades: la 2ª en el día de pago que cae el día del cobro
+  // (o justo antes) y la 1ª en el día de pago anterior. Con la 2ª mitad ya se paga.
+  //   Claude el 30 → mitad el 15 y mitad el 30 · Spotify el 2 → mitad el 15 y el 30 del mes anterior
+  //   Celular el 15 → mitad el 30 del mes anterior y mitad el 15
+  // Lo que no tiene día de cobro se toma como si se cobrara el segundo día de pago.
   const t = tc(S);
+  const a = S.ajustes || {};
+  const dpSeg = Number(a.dia_pago2) || 30;
   const marcas = {};
-  (S.pagosMes || []).forEach((r) => { if (r.mes === mes && r.parte && r.parte !== 'pago') marcas[r.plan_item + '|' + r.parte] = r; });
+  (S.pagosMes || []).forEach((r) => { if (r.parte && r.parte !== 'pago') marcas[r.plan_item + '|' + r.parte] = r; });
   const pagos = [];
-  for (let i = -1; i <= 2; i++) diasDePago(mesShift(mes, i), S).forEach((d) => pagos.push(d));
+  for (let i = -2; i <= 3; i++) diasDePago(mesShift(mes, i), S).forEach((d) => pagos.push(d));
   pagos.sort();
-  const [mp1] = diasDePago(mes, S);
+  const [mp1, mp2] = diasDePago(mes, S);
   const hoyIso = hoyISO(hoy);
   const out = [];
-  S.plan.filter((it) => it.activo && it.dividir).forEach((it) => {
-    const mitad = montoCobro(it, t) / 2;
-    for (let i = 0; i <= 3; i++) {
+  S.plan.filter((it) => it.activo).forEach((it) => {
+    const total = montoCobro(it, t);
+    if (!total) return;
+    for (let i = 0; i <= 2; i++) {
       const mc = mesShift(mes, i);
       if (!aplicaEnMes(it, mc)) continue;
       const [y, m] = mc.split('-').map(Number);
-      const cobro = it.dia_cobro ? isoDe(y, m, it.dia_cobro) : isoDe(y, m, 31);
-      const antes = pagos.filter((d) => d < cobro).slice(-2);
-      antes.forEach((dp) => {
-        if (dp.slice(0, 7) !== mes) return;
+      const para = isoDe(y, m, Number(it.dia_cobro) || dpSeg);
+      const hasta = pagos.filter((d) => d <= para);
+      const seg = hasta[hasta.length - 1], pri = hasta[hasta.length - 2];
+      [[pri, 1], [seg, 2]].forEach(([dp, n]) => {
+        if (!dp || (dp !== mp1 && dp !== mp2)) return;
         const marca = marcas[it.id + '|' + dp];
         const dias = Math.round((new Date(dp + 'T12:00:00') - new Date(hoyIso + 'T12:00:00')) / 86400000);
-        out.push({ it, dia: dp, cual: dp === mp1 ? 'p1' : 'p2', para: cobro, monto: mitad,
-                   estado: marca ? 'apartado' : 'pendiente', marca, dias });
+        out.push({ it, dia: dp, cual: dp === mp1 ? 'p1' : 'p2', para, mitad: n, total, monto: total / 2,
+                   sinDia: !it.dia_cobro, estado: marca ? 'apartado' : 'pendiente', marca, dias });
       });
     }
   });
-  return out.sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0));
+  const ordenTipo = { universidad: 0, fijo: 1, suscripcion: 2 };
+  return out.sort((x, y) => (x.dia < y.dia ? -1 : x.dia > y.dia ? 1 : 0) || (x.para < y.para ? -1 : x.para > y.para ? 1 : 0)
+    || (ordenTipo[x.it.tipo] ?? 3) - (ordenTipo[y.it.tipo] ?? 3) || String(x.it.nombre).localeCompare(y.it.nombre));
+}
+
+// ── Cuánto apartar de cada quincena ───────────────────────────
+export function quincenas(S, mes, hoy = new Date()) {
+  const a = S.ajustes || {};
+  const [d1, d2] = diasDePago(mes, S);
+  const mitades = apartadosDelMes(S, mes, hoy);
+  const grupos = [['suscripcion', 'Suscripciones'], ['fijo', 'Gastos fijos'], ['universidad', 'Universidad']];
+  const filas = Object.fromEntries(grupos.map(([k, n]) => [k, { nombre: n, q1: 0, q2: 0 }]));
+  const ap = { q1: 0, q2: 0 };
+  mitades.forEach((x) => {
+    const q = x.cual === 'p1' ? 'q1' : 'q2';
+    (filas[x.it.tipo] || filas.fijo)[q] += x.monto;
+    if (x.estado === 'apartado') ap[q] += x.monto;
+  });
+  const lista = grupos.map(([k]) => filas[k]).filter((f) => f.q1 || f.q2);
+  const total = { q1: lista.reduce((s, f) => s + f.q1, 0), q2: lista.reduce((s, f) => s + f.q2, 0) };
+  const ingreso = Number(a.ingreso_quincena) || 0;
+  return {
+    p1: +d1.slice(8), p2: +d2.slice(8), d1, d2, filas: lista, total, mitades,
+    det: { q1: mitades.filter((x) => x.cual === 'p1'), q2: mitades.filter((x) => x.cual === 'p2') },
+    apartado: ap, falta: { q1: total.q1 - ap.q1, q2: total.q2 - ap.q2 },
+    ingreso, libre: { q1: ingreso - total.q1, q2: ingreso - total.q2 },
+    disponible: { q1: ingreso - ap.q1, q2: ingreso - ap.q2 },
+  };
 }
