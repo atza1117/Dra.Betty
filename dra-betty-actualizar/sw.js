@@ -1,7 +1,7 @@
 // Service worker de la Dra. Betty: permite instalarla y abrirla aunque falle el internet.
 // Primero intenta la red (para tener siempre la última versión) y si no hay, usa la copia guardada.
 // Los datos de Supabase nunca se guardan acá.
-const CACHE = 'drabetty-v6';
+const CACHE = 'drabetty-v8';
 const ARCHIVOS = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/db.js', 'js/calculos.js', 'js/lector.js', 'js/config.js', 'js/perezoso.js', 'js/graficas.js',

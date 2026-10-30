@@ -290,13 +290,13 @@ function textoAviso(a) {
   else if (a.cobro) {
     em = '↻';
     const cuando = a.dias < 0 ? `se cobró hace ${-a.dias} día${a.dias === -1 ? '' : 's'} y no está marcado` : a.dias === 0 ? 'se cobra hoy' : `se cobra en ${a.dias} día${a.dias === 1 ? '' : 's'}`;
-    t = `<b>${esc(a.cobro.nombre)}</b> ${cuando} (${crc(a.monto)}). <button class="btn sm" data-pagar="${esc(a.cobro.id)}" style="margin-left:4px">Ya se pagó</button>`;
+    t = `<b>${esc(a.cobro.nombre)}</b> ${cuando} (${crc(a.monto)}). <button class="btn sm" data-pagar="${esc(a.cobro.id)}" style="margin-left:4px">Ya lo pagué</button>`;
   }
-  else if (a.apartar) {
-    const x = a.apartar;
+  else if (a.apartarDia) {
+    const g = a.apartarDia;
     em = '⬇';
-    const cuando = x.dias < 0 ? `El ${+x.dia.slice(8)} te tocaba apartar` : x.dias === 0 ? 'Hoy es día de pago: apartá' : `El ${+x.dia.slice(8)} te toca apartar`;
-    t = `${cuando} <b>${crc(x.monto)}</b> para <b>${esc(x.it.nombre)}</b> (se cobra el ${fechaCorta(x.para)}). <button class="btn sm pri" data-apartar="${esc(x.it.id)}|${esc(x.dia)}" style="margin-left:4px">Ya lo aparté</button>`;
+    const cuando = g.dias < 0 ? `Del pago del ${+g.dia.slice(8)} te falta apartar` : g.dias === 0 ? 'Hoy es día de pago: apartá' : `El ${+g.dia.slice(8)} te toca apartar`;
+    t = `${cuando} <b>${crc(g.monto)}</b> (${g.n} mitad${g.n === 1 ? '' : 'es'}). <button class="btn sm pri" data-ir="pagos" style="margin-left:4px">Ver y marcar</button>`;
   }
   else if (a.sinTipoCambio) { em = '$'; t = 'Falta el <b>tipo de cambio</b> en Plan: sin él no puedo sumar tus dólares.'; }
   else if (a.colchon) { em = '◇'; t = `El colchón aguanta <b>${a.colchon.cubiertos.toFixed(1)} meses</b>. Tu meta es ${a.colchon.meses}.`; }
@@ -511,29 +511,35 @@ function vPagos() {
   // cuánto apartar de cada quincena
   const Q = C.quincenas(S, S.mes);
   const fila = (n, a, b, cls = '') => `<tr class="${cls}"><th scope="row">${n}</th><td>${crc(a)}</td><td>${crc(b)}</td><td>${crc(a + b)}</td></tr>`;
-  const det = (arr) => arr.length ? arr.map((x) => `<div class="saldo-row"><div class="n"><span class="chip sm">${esc(x.chip)}</span>${esc(x.it.nombre)}</div><div class="v">${crc(x.monto)}</div></div>`).join('')
-    : '<p class="vacio" style="padding:6px 0">Nada</p>';
+  const tres = (n, a, b, cls) => `<tr class="${cls}"><th scope="row">${n}</th>${[a, b, a + b].map((v) => `<td class="${v < -0.5 ? 'neg' : ''}">${crc(v)}</td>`).join('')}</tr>`;
   h += `<div class="card"><h2>¿Cuánto apartar?</h2>
     <div class="tabla-q"><table>
       <thead><tr><th></th><th scope="col">Pago del ${Q.p1}</th><th scope="col">Pago del ${Q.p2}</th><th scope="col">Mes</th></tr></thead>
       <tbody>${Q.filas.map((f) => fila(f.nombre, f.q1, f.q2)).join('')}
         ${fila('Total a apartar', Q.total.q1, Q.total.q2, 'tot')}
+        ${fila('Ya apartaste', Q.apartado.q1, Q.apartado.q2, 'ok')}
+        ${tres('Te falta apartar', Q.falta.q1, Q.falta.q2, 'falta')}
         ${Q.ingreso ? fila('Te entra', Q.ingreso, Q.ingreso, 'sub') : ''}
-        ${Q.ingreso ? `<tr class="queda"><th scope="row">Te queda</th>${[Q.queda.q1, Q.queda.q2, Q.queda.q1 + Q.queda.q2].map((v) => `<td class="${v < 0 ? 'neg' : 'pos'}">${crc(v)}</td>`).join('')}</tr>` : ''}
+        ${Q.ingreso ? tres('Disponible ahora', Q.disponible.q1, Q.disponible.q2, 'queda') : ''}
+        ${Q.ingreso ? tres('Libre cuando apartés todo', Q.libre.q1, Q.libre.q2, 'sub') : ''}
       </tbody></table></div>
-    <div class="info" style="margin:12px 0 0"><div><span>Si preferís apartar lo mismo en las dos</span><b>${crc(Q.parejo)} por quincena</b></div></div>
-    <details class="tabla-ver"><summary>Ver qué sale de cada pago</summary>
-      <div class="grid2" style="margin-top:10px">
-        <div><div class="grupo-hd"><b>Del pago del ${Q.p1}</b><span>${crc(Q.total.q1)}</span></div>${det(Q.det.q1)}</div>
-        <div><div class="grupo-hd"><b>Del pago del ${Q.p2}</b><span>${crc(Q.total.q2)}</span></div>${det(Q.det.q2)}</div>
-      </div></details>
-    <p class="nota">Lo que se cobra del ${Q.p1} al ${Q.p2 - 1} sale del pago del ${Q.p1}. Lo del ${Q.p2} en adelante y los primeros días del mes siguiente, del pago del ${Q.p2}. Lo que no tiene día de cobro o dice "mitad" va mitad y mitad. Los dólares van al tipo de cambio de ⚙ (₡${miles(Math.round(t))}).</p></div>`;
+    <p class="nota">Cada cobro se aparta en dos mitades: la primera en el pago anterior y la segunda en el pago que cae el día del cobro, y con esa ya se paga. Marcá abajo cada mitad cuando la apartés: se te rebaja de lo disponible, y si la desmarcás, vuelve. Los dólares van a ₡${miles(Math.round(t))} (cambialo en ⚙).</p></div>`;
 
-  // apartados por quincena
-  if (P.apartados.length) {
-    h += `<div class="card"><h2>Para apartar este mes <small>la mitad en cada pago</small></h2>${P.apartados.map(filaApartado).join('')}
-      <p class="nota">Así no tenés que sacar todo de un solo pago cuando llega el cobro.</p></div>`;
+  // las mitades de cada quincena, para marcar
+  // Si te pagan unos días antes (el 13 en vez del 15), ya cuenta como esa quincena.
+  let ahora = null;
+  if (S.mes === C.hoyMes()) {
+    const hoyD = +C.hoyISO().slice(8);
+    ahora = hoyD >= +Q.d2.slice(8) - 3 ? 'q2' : hoyD >= +Q.d1.slice(8) - 3 ? 'q1' : 'q1-prox';
   }
+  [['q1', Q.d1], ['q2', Q.d2]].forEach(([q, dia]) => {
+    const arr = Q.det[q];
+    const hecho = Q.apartado[q], tot = Q.total[q];
+    const badge = ahora === q ? ' <span class="chip sm pronto">Esta quincena</span>' : ahora === q + '-prox' ? ' <span class="chip sm">La que viene</span>' : '';
+    h += `<div class="card${ahora === q ? ' q-ahora' : ''}"><div class="grupo-hd"><b>Quincena del ${+dia.slice(8)}${badge}</b><span>${crc(hecho)} de ${crc(tot)}</span></div>
+      <div class="track" style="height:7px;margin:-4px 2px 12px"><i style="width:${tot ? Math.min(hecho / tot * 100, 100) : 0}%;background:var(--pos)"></i></div>
+      ${arr.length ? arr.map(filaMitad).join('') : '<p class="vacio">Nada que apartar.</p>'}</div>`;
+  });
 
   // checklist
   h += `<div class="card"><h2>Checklist del mes</h2>${vis.length ? vis.map(filaPago).join('') : '<p class="vacio">No hay pagos este mes.</p>'}
@@ -567,7 +573,7 @@ function filaPago(x) {
   let chip, acc = '';
   if (x.estado === 'pagado') {
     chip = `<span class="chip sm" style="color:var(--pos);border:1px solid rgba(61,220,151,.4);background:rgba(61,220,151,.12)">✓ Pagado${x.mov ? ' ' + fechaCorta(x.mov.fecha) : ''}</span>`;
-    if (x.detectado) chip += `<span class="sub" style="font-size:11.5px">lo reconocí: ${esc((x.mov.descripcion || x.mov.categoria || '').slice(0, 38))}</span>`;
+    if (x.detectado) chip += `<span class="sub" style="font-size:11.5px">lo vi en el banco: ${esc((x.mov.descripcion || x.mov.categoria || '').slice(0, 38))}</span>`;
     else acc = `<button class="btn sm" data-desmarcar="${esc(it.id)}">Deshacer</button>`;
   } else if (x.estado === 'no') {
     chip = '<span class="chip sm">Este mes no</span>';
@@ -578,7 +584,7 @@ function filaPago(x) {
       : d < 0 ? `<span class="chip sm vencido">Se cobró hace ${-d} d · ¿ya pagaste?</span>`
       : d === 0 ? '<span class="chip sm vencido">Se cobra hoy</span>'
       : `<span class="chip sm pronto">Se cobra en ${d} d</span>`;
-    acc = `<button class="btn sm pri" data-pagar="${esc(it.id)}">Ya se pagó</button>
+    acc = `<button class="btn sm pri" data-pagar="${esc(it.id)}">Ya lo pagué</button>
            <button class="btn sm" data-no-aplica="${esc(it.id)}">Este mes no</button>`;
   }
   return `<div class="cta" style="gap:8px">
@@ -592,27 +598,15 @@ function filaPago(x) {
   </div>`;
 }
 
-function filaApartado(x) {
-  const c = cuenta(x.it.cuenta_apartado);
-  let chip, acc;
-  if (x.estado === 'apartado') {
-    chip = `<span class="chip sm" style="color:var(--pos);border:1px solid rgba(61,220,151,.4);background:rgba(61,220,151,.12)">✓ Apartado${c && x.marca && x.marca.movimiento ? ' en ' + esc(c.nombre) : ''}</span>`;
-    acc = `<button class="btn sm" data-desapartar="${esc(x.it.id)}|${esc(x.dia)}">Deshacer</button>`;
-  } else {
-    chip = x.dias < 0 ? `<span class="chip sm vencido">Te tocaba el ${fechaCorta(x.dia)}</span>`
-      : x.dias === 0 ? '<span class="chip sm vencido">Hoy</span>'
-      : `<span class="chip sm pronto">El ${fechaCorta(x.dia)} · en ${x.dias} d</span>`;
-    acc = `<button class="btn sm pri" data-apartar="${esc(x.it.id)}|${esc(x.dia)}">Ya lo aparté</button>`;
-  }
-  return `<div class="cta" style="gap:8px">
-    <div class="cta-top">
-      <div class="cta-nom"><b><span class="chip sm" style="margin-right:6px;background:rgba(255,209,102,.16);color:var(--gold)">pago del ${+x.dia.slice(8)}</span>${esc(x.it.nombre)}</b>
-        <span class="sub">Mitad para el cobro del ${fechaLarga(x.para)}${c ? ' · va a ' + esc(c.nombre) : ''}</span></div>
-      <div class="cta-saldo">${crc(x.monto)}</div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${chip}</div>
-    <div class="cta-acc">${acc}</div>
-  </div>`;
+function filaMitad(x) {
+  const ok = x.estado === 'apartado';
+  const cobro = x.sinDia ? 'sin día de cobro' : `se cobra el ${fechaCorta(x.para)}`;
+  const quePasa = x.sinDia ? '' : x.mitad === 2 ? ' · con esta ya se paga' : '';
+  return `<button class="mitad" data-mitad="${esc(x.it.id)}|${esc(x.dia)}" aria-pressed="${ok}">
+    <span class="caja" aria-hidden="true"></span>
+    <span class="txt"><b>${esc(x.it.nombre)}</b>
+      <small>${x.mitad === 1 ? '1ª' : '2ª'} mitad · ${cobro}${quePasa} · total ${crc(x.total)}${x.it.moneda === 'USD' ? ' (' + usd(x.it.monto) + ')' : ''}</small></span>
+    <span class="v">${crc(x.monto)}</span></button>`;
 }
 
 function campo(lbl, id, val, type = 'text', extra = '') {
@@ -695,7 +689,12 @@ function conectar(root) {
   on('liquidar', (id) => abrirLiquidar(cuenta(id)));
   on('plan', (id) => { const p = S.plan.find((x) => x.id === id); if (p) abrirPlan(p); });
   on('nuevo-plan', (tipo) => abrirPlan({ tipo }));
-  on('pagar', (id) => abrirPagar(S.plan.find((x) => x.id === id)));
+  on('pagar', (id) => { const it = S.plan.find((x) => x.id === id); if (it) hacer(() => db.marcarPago(id, S.mes, 'pagado'), it.nombre + ' pagado ✓'); });
+  on('mitad', (v) => {
+    const [id, dia] = v.split('|');
+    const ya = (S.pagosMes || []).some((r) => r.plan_item === id && r.parte === dia);
+    ya ? desapartar(id, dia) : apartar(id, dia);
+  });
   on('no-aplica', (id) => hacer(() => db.marcarPago(id, S.mes, 'no_aplica'), 'Listo, este mes no cuenta'));
   on('desmarcar', (id) => hacer(() => db.desmarcarPago(id, S.mes), 'Desmarcado'));
   on('apartar', (v) => apartar(...v.split('|')));
@@ -1164,23 +1163,8 @@ function abrirLiquidar(c) {
 
 // ── Apartar la mitad de un pago grande ─────────────────────────
 function apartar(itemId, dia) {
-  const it = S.plan.find((x) => x.id === itemId);
-  if (!it) return;
   const x = C.apartadosDelMes(S, dia.slice(0, 7)).find((y) => y.it.id === itemId && y.dia === dia);
-  const mes = dia.slice(0, 7);
-  const destino = cuenta(it.cuenta_apartado), pri = principal();
-  hacer(async () => {
-    let movId = null;
-    if (destino && pri && destino.id !== pri.id && x) {
-      const monto = Math.round(convertir(x.monto, 'CRC', pri.moneda) * 100) / 100;
-      const g = await db.guardarMovimiento({ tipo: 'transferencia', monto, fecha: C.hoyISO() < dia ? C.hoyISO() : dia,
-        cuenta_origen: pri.id, cuenta_destino: destino.id,
-        monto_destino: destino.moneda !== pri.moneda ? Math.round(convertir(monto, pri.moneda, destino.moneda) * 100) / 100 : null,
-        descripcion: 'Apartado para ' + it.nombre });
-      movId = g.id;
-    }
-    await db.marcarPago(itemId, mes, 'apartado', movId, dia);
-  }, 'Apartado ✓ ' + (x ? crc(x.monto) : ''));
+  hacer(() => db.marcarPago(itemId, dia.slice(0, 7), 'apartado', null, dia), `Apartado ${x ? crc(x.monto) : ''} ✓`);
 }
 function desapartar(itemId, dia) {
   const mes = dia.slice(0, 7);
@@ -1188,55 +1172,7 @@ function desapartar(itemId, dia) {
   hacer(async () => {
     await db.desmarcarPago(itemId, mes, dia);
     if (marca && marca.movimiento) await db.borrarMovimiento(marca.movimiento);
-  }, 'Desmarcado');
-}
-
-// ── Marcar un pago fijo como pagado ────────────────────────────
-function abrirPagar(it) {
-  if (!it) return;
-  const P = C.pagosDelMes(S, S.mes);
-  const x = P.lista.find((y) => y.it.id === it.id);
-  const pri = principal();
-  const lista = activas();
-  const sel = (cuenta(it.cuenta_apartado) || pri || lista[0] || {}).id;
-  const c0 = cuenta(sel);
-  const montoIni = c0 ? convertir(x ? x.monto : 0, 'CRC', c0.moneda) : (x ? x.monto : 0);
-  const [y, m] = S.mes.split('-').map(Number);
-  const ult = new Date(y, m, 0).getDate();
-  const fechaSug = S.mes === C.hoyMes() ? C.hoyISO() : `${S.mes}-${String(Math.min(it.dia_cobro || ult, ult)).padStart(2, '0')}`;
-  const h = `<div class="info">
-      <div><span>${esc(it.nombre)}</span><b>${it.moneda === 'USD' ? usd(it.monto) + ' ≈ ' : ''}${crc(x ? x.monto : 0)}</b></div>
-      ${it.dia_cobro ? `<div><span>Se cobra</span><b>el ${it.dia_cobro} de cada mes</b></div>` : ''}
-    </div>
-    <div class="fld"><label for="pg-monto" id="pg-lbl">Monto${c0 ? ' en ' + (c0.moneda === 'USD' ? 'dólares' : 'colones') : ''}</label>
-      <input class="inp money" id="pg-monto" type="number" inputmode="decimal" step="any" value="${Math.round(montoIni * 100) / 100}"></div>
-    <div class="row2">
-      <div class="fld"><label for="pg-cuenta">¿De dónde salió?</label><select class="inp" id="pg-cuenta">${opcionesCuentas(lista, sel)}</select></div>
-      <div class="fld"><label for="pg-fecha">Fecha</label><input class="inp" id="pg-fecha" type="date" value="${fechaSug}"></div>
-    </div>
-    <button class="btn pri wide" id="pg-ok">Anotar el gasto y marcar pagado</button>
-    <div class="btnrow" style="margin-top:10px"><button class="btn sm" id="pg-solo">Ya lo había anotado: solo marcar</button></div>
-    <div id="pg-err"></div>`;
-  abrirHoja('Ya se pagó', h, () => {
-    $('#pg-cuenta').addEventListener('change', () => {
-      const c = cuenta($('#pg-cuenta').value);
-      if (!c) return;
-      $('#pg-lbl').textContent = 'Monto en ' + (c.moneda === 'USD' ? 'dólares' : 'colones');
-      $('#pg-monto').value = Math.round(convertir(x ? x.monto : 0, 'CRC', c.moneda) * 100) / 100;
-    });
-    $('#pg-ok').addEventListener('click', () => {
-      const monto = num($('#pg-monto').value);
-      if (monto <= 0) { $('#pg-err').innerHTML = '<p class="err">Poné el monto.</p>'; return; }
-      const fila = { tipo: 'gasto', monto, fecha: $('#pg-fecha').value || C.hoyISO(), cuenta_origen: $('#pg-cuenta').value,
-        categoria: C.categoriaDeItem(it), bolsa: it.bolsa || 'Necesidades', medio: it.medio || 'Az', descripcion: it.nombre };
-      cerrar();
-      hacer(async () => {
-        const g = await db.guardarMovimiento(fila);
-        await db.marcarPago(it.id, S.mes, 'pagado', g.id);
-      }, it.nombre + ' pagado ✓');
-    });
-    $('#pg-solo').addEventListener('click', () => { cerrar(); hacer(() => db.marcarPago(it.id, S.mes, 'pagado'), it.nombre + ' marcado como pagado'); });
-  });
+  }, 'Desmarcado: esa plata vuelve a estar libre');
 }
 
 // ── Pagos fijos: crear y editar ────────────────────────────────

@@ -370,3 +370,19 @@ td{padding:8px 8px 8px 0; border-top:1px solid var(--line); vertical-align:top; 
 .tabla-q tr.sub th, .tabla-q tr.sub td{color:var(--dim); font-weight:600}
 .tabla-q tr.queda th, .tabla-q tr.queda td{font-weight:800; border-bottom:0}
 .tabla-q td.pos{color:var(--pos)} .tabla-q td.neg{color:var(--over)}
+/* ── Mitades para marcar ── */
+.mitad{display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; align-items:center; width:100%; text-align:left;
+  padding:11px 12px; margin-bottom:7px; border-radius:14px; background:var(--raise); border:1px solid var(--line); color:inherit; font:inherit; cursor:pointer}
+.mitad:hover{border-color:var(--line2)}
+.mitad:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+.mitad .caja{width:22px; height:22px; border-radius:7px; border:2px solid var(--dim); display:grid; place-items:center}
+.mitad[aria-pressed="true"] .caja{background:var(--pos); border-color:var(--pos)}
+.mitad[aria-pressed="true"] .caja::after{content:""; width:6px; height:11px; border:solid #0D1028; border-width:0 3px 3px 0; transform:rotate(45deg) translate(-1px,-1px)}
+.mitad .txt{display:flex; flex-direction:column; gap:2px; min-width:0}
+.mitad .txt b{font-size:14px}
+.mitad .txt small{font-size:12px; color:var(--dim); line-height:1.35}
+.mitad .v{font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap}
+.mitad[aria-pressed="true"] .txt b, .mitad[aria-pressed="true"] .v{color:var(--dim)}
+.tabla-q tr.ok th, .tabla-q tr.ok td{color:var(--pos)}
+.tabla-q tr.falta th, .tabla-q tr.falta td{font-weight:800}
+.card.q-ahora{border-color:rgba(255,209,102,.5)}
